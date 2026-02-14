@@ -2,6 +2,7 @@
 
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
+import { groq } from "@ai-sdk/groq";
 import { auth } from "@clerk/nextjs/server";
 import { getBrandSettingsForUser } from "@/app/actions/brandSettings";
 import type { GeneratePostResult } from "@/lib/types";
@@ -81,11 +82,13 @@ export async function generatePost(
       audience = settings.target_audience || FALLBACK.target_audience;
     }
 
-    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    if (!apiKey) {
+    const groqKey = process.env.GROQ_API_KEY;
+    const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+    if (!groqKey && !googleKey) {
       return {
         success: false,
-        error: "Missing GOOGLE_GENERATIVE_AI_API_KEY",
+        error: "Missing API key. Add GROQ_API_KEY (free) or GOOGLE_GENERATIVE_AI_API_KEY to .env.local",
       };
     }
 
@@ -98,18 +101,26 @@ export async function generatePost(
       vibeOverride
     );
 
+    // Prefer Groq (generous free tier: 14.4K requests/day) over Google
+    const useGroq = !!groqKey;
+
     let text = "";
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const result = await generateText({
-          model: google("gemini-1.5-flash"),
-          prompt,
-          providerOptions: {
-            google: {
-              safetySettings: SAFETY_SETTINGS,
-            },
-          },
-        });
+        const result = useGroq
+          ? await generateText({
+              model: groq("llama-3.1-8b-instant"),
+              prompt,
+            })
+          : await generateText({
+              model: google("gemini-2.0-flash"),
+              prompt,
+              providerOptions: {
+                google: {
+                  safetySettings: SAFETY_SETTINGS,
+                },
+              },
+            });
         text = result.text;
         break;
       } catch (err) {

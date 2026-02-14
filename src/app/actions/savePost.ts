@@ -116,6 +116,9 @@ export async function savePostImage(
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to save post";
-    return { success: false, error: message };
+    const details = err && typeof err === "object" && "message" in err
+      ? String((err as { message?: string }).message)
+      : message;
+    return { success: false, error: details };
   }
 }
