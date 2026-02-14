@@ -12,6 +12,11 @@ const nextConfig = {
         hostname: "image.pollinations.ai",
         pathname: "/prompt/**",
       },
+      {
+        protocol: "https",
+        hostname: "**.fal.media",
+        pathname: "/**",
+      },
     ],
   },
   experimental: {

@@ -135,6 +135,7 @@ export function PostPreviewCard() {
   const [draftImage, setDraftImage] = useState<string | null>(null);
   const [imageLoadError, setImageLoadError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [imageGenerating, setImageGenerating] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scheduling, setScheduling] = useState(false);
@@ -201,6 +202,7 @@ export function PostPreviewCard() {
 
     const imagePrompt = suggestedImagePrompt?.trim() || draftContent.trim();
 
+    setImageGenerating(true);
     try {
       const result = await generateImage(imagePrompt);
 
@@ -232,6 +234,8 @@ export function PostPreviewCard() {
       toast.error("Failed to generate image", {
         description: err instanceof Error ? err.message : "Unknown error",
       });
+    } finally {
+      setImageGenerating(false);
     }
   }
 
@@ -505,10 +509,15 @@ export function PostPreviewCard() {
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={handleGenerateImage}
-                            className="p-2 rounded-lg bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 transition-colors"
+                            disabled={imageGenerating}
+                            className="p-2 rounded-lg bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                             title="Regenerate"
                           >
-                            <RefreshCw className="h-4 w-4" />
+                            {imageGenerating ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
                           </motion.button>
                         </div>
                         <div className="absolute bottom-2 left-2 right-2 flex justify-end pointer-events-auto">
@@ -530,10 +539,17 @@ export function PostPreviewCard() {
                       whileHover={{ scale: 1.01 }}
                       whileTap={{ scale: 0.99 }}
                       onClick={handleGenerateImage}
-                      className={`w-full ${previewStyles.imageAspect} border border-dashed border-[#e7e7e7] flex flex-col items-center justify-center gap-2 text-[#657786] hover:bg-slate-50 hover:border-[#ccc] transition-colors`}
+                      disabled={imageGenerating}
+                      className={`w-full ${previewStyles.imageAspect} border border-dashed border-[#e7e7e7] flex flex-col items-center justify-center gap-2 text-[#657786] hover:bg-slate-50 hover:border-[#ccc] transition-colors disabled:opacity-60 disabled:cursor-not-allowed`}
                     >
-                      <ImageIcon className="h-10 w-10" />
-                      <span className="text-sm font-medium">Generate Visual</span>
+                      {imageGenerating ? (
+                        <Loader2 className="h-10 w-10 animate-spin" />
+                      ) : (
+                        <ImageIcon className="h-10 w-10" />
+                      )}
+                      <span className="text-sm font-medium">
+                        {imageGenerating ? "Generating…" : "Generate Visual"}
+                      </span>
                     </motion.button>
                   )}
                 </div>
