@@ -7,6 +7,19 @@ const nextConfig = {
         hostname: "*.supabase.co",
         pathname: "/storage/v1/object/public/**",
       },
+      {
+        protocol: "https",
+        hostname: "image.pollinations.ai",
+        pathname: "/prompt/**",
+      },
+    ],
+  },
+  experimental: {
+    optimizePackageImports: [
+      "@clerk/nextjs",
+      "lucide-react",
+      "framer-motion",
+      "recharts",
     ],
   },
 };

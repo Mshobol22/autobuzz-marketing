@@ -1,6 +1,6 @@
 "use server";
 
-import type { PublishPostResult } from "@/lib/types";
+import type { PostNowResult } from "@/lib/types";
 
 const AYRSHARE_API_URL = "https://api.ayrshare.com/api/post";
 
@@ -9,12 +9,18 @@ const PLATFORM_MAP: Record<string, string> = {
   LinkedIn: "linkedin",
   Instagram: "instagram",
   Facebook: "facebook",
+  facebook: "facebook",
 };
 
-export async function publishPost(
-  content: string,
-  platform: string
-): Promise<PublishPostResult> {
+export async function postNow({
+  content,
+  image,
+  platforms,
+}: {
+  content: string;
+  image?: string | null;
+  platforms: string[];
+}): Promise<PostNowResult> {
   const apiKey = process.env.AYRSHARE_API_KEY;
 
   if (!apiKey) {
@@ -24,7 +30,18 @@ export async function publishPost(
     };
   }
 
-  const ayrsharePlatform = PLATFORM_MAP[platform] ?? platform.toLowerCase();
+  const ayrsharePlatforms = platforms.map(
+    (p) => PLATFORM_MAP[p] ?? p.toLowerCase()
+  );
+
+  const body: Record<string, unknown> = {
+    post: content,
+    platforms: ayrsharePlatforms,
+  };
+
+  if (image?.trim() && image.startsWith("https://")) {
+    body.mediaUrls = [image.trim()];
+  }
 
   try {
     const res = await fetch(AYRSHARE_API_URL, {
@@ -33,10 +50,7 @@ export async function publishPost(
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        post: content,
-        platforms: [ayrsharePlatform],
-      }),
+      body: JSON.stringify(body),
     });
 
     const data = await res.json();

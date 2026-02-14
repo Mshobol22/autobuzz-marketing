@@ -51,7 +51,7 @@ export default function AnalyticsPage() {
       <motion.h1
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-3xl font-bold text-zinc-100"
+        className="text-3xl font-bold text-white font-serif"
       >
         Analytics
       </motion.h1>
@@ -70,7 +70,7 @@ export default function AnalyticsPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="rounded-2xl border border-white/10 bg-zinc-900/50 backdrop-blur-md p-6"
+          className="art-card p-6"
         >
           <h2 className="text-lg font-semibold text-zinc-100 mb-6 flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-zinc-400" />
@@ -89,12 +89,12 @@ export default function AnalyticsPage() {
                   >
                     <stop
                       offset="5%"
-                      stopColor="#71717a"
-                      stopOpacity={0.3}
+                      stopColor="#7C3AED"
+                      stopOpacity={0.4}
                     />
                     <stop
                       offset="95%"
-                      stopColor="#71717a"
+                      stopColor="#7C3AED"
                       stopOpacity={0}
                     />
                   </linearGradient>
@@ -154,7 +154,7 @@ export default function AnalyticsPage() {
             return (
               <div
                 key={card.title}
-                className="rounded-2xl border border-white/10 bg-zinc-900/50 backdrop-blur-md p-6"
+                className="art-card p-6"
               >
                 <div className="flex items-start justify-between">
                   <div className="p-2.5 rounded-xl bg-zinc-600/40 border border-white/10">

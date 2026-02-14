@@ -9,7 +9,7 @@ export default function GeneratorPage() {
       <motion.h1
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-3xl font-bold text-zinc-100"
+        className="text-3xl font-bold text-white font-serif"
       >
         Generator
       </motion.h1>

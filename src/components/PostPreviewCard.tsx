@@ -1,10 +1,12 @@
 "use client";
 
-import { readStreamableValue } from "@ai-sdk/rsc";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
+  Calendar,
   Download,
+  Facebook,
   ImageIcon,
   Loader2,
   RefreshCw,
@@ -15,11 +17,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { generatePost } from "@/app/actions/generatePost";
 import { generateImage } from "@/app/actions/generateImage";
-import { publishPost } from "@/app/actions/publishPost";
+import { postNow } from "@/app/actions/postNow";
+import { schedulePost } from "@/app/actions/schedulePost";
 import { savePostDraft, savePostImage } from "@/app/actions/savePost";
 
-const PLATFORMS = ["LinkedIn", "Twitter", "Instagram"] as const;
-type Platform = (typeof PLATFORMS)[number];
+const PLATFORM_OPTIONS = [
+  { value: "LinkedIn", label: "LinkedIn" },
+  { value: "Twitter", label: "Twitter" },
+  { value: "Instagram", label: "Instagram" },
+  { value: "facebook", label: "Facebook Page" },
+] as const;
+type Platform = (typeof PLATFORM_OPTIONS)[number]["value"];
+const PLATFORMS = PLATFORM_OPTIONS.map((p) => p.value);
+
+const VIBE_OVERRIDES = [
+  { value: "", label: "None" },
+  { value: "Make it funnier", label: "Make it funnier" },
+  { value: "Make it serious", label: "Make it serious" },
+  { value: "Make it more casual", label: "Make it more casual" },
+  { value: "Make it more formal", label: "Make it more formal" },
+  { value: "Add more urgency", label: "Add more urgency" },
+] as const;
 
 const PLATFORM_PREVIEW_STYLES: Record<
   Platform,
@@ -43,12 +61,30 @@ const PLATFORM_PREVIEW_STYLES: Record<
     container: "w-full max-w-[468px]",
     imageAspect: "aspect-square",
   },
+  facebook: {
+    bg: "bg-white",
+    text: "text-[#050505]",
+    container: "w-full max-w-[500px]",
+    imageAspect: "aspect-[4/3]",
+  },
 };
 
 const PLATFORM_FONT_STYLES: Record<Platform, string> = {
   LinkedIn: "text-[15px] leading-[1.4]",
   Twitter: "text-[15px] leading-[1.3125]",
   Instagram: "text-[14px] leading-[1.375]",
+  facebook: "text-[15px] leading-[1.4]",
+};
+
+const PLATFORM_LABELS: Record<Platform, string> = {
+  LinkedIn: "LinkedIn",
+  Twitter: "Twitter",
+  Instagram: "Instagram",
+  facebook: "Facebook Page",
+};
+
+const PLATFORM_ICONS: Partial<Record<Platform, React.ComponentType<{ className?: string }>>> = {
+  facebook: Facebook,
 };
 
 function AutoResizeTextarea({
@@ -90,36 +126,66 @@ function AutoResizeTextarea({
 }
 
 export function PostPreviewCard() {
+  const router = useRouter();
   const [topic, setTopic] = useState("");
   const [platform, setPlatform] = useState<Platform>("Twitter");
+  const [vibeOverride, setVibeOverride] = useState("");
   const [previewPlatform, setPreviewPlatform] = useState<Platform>("Twitter");
-  const [output, setOutput] = useState("");
+  const [draftContent, setDraftContent] = useState("");
+  const [draftImage, setDraftImage] = useState<string | null>(null);
+  const [imageLoadError, setImageLoadError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageLoading, setImageLoading] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const [schedulePopoverOpen, setSchedulePopoverOpen] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const scheduleButtonRef = useRef<HTMLButtonElement>(null);
+  const schedulePopoverRef = useRef<HTMLDivElement>(null);
   const [postId, setPostId] = useState<string | null>(null);
+  const [suggestedImagePrompt, setSuggestedImagePrompt] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!schedulePopoverOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      if (
+        schedulePopoverRef.current &&
+        !schedulePopoverRef.current.contains(target)
+      ) {
+        setSchedulePopoverOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [schedulePopoverOpen]);
 
   async function handleGenerate() {
     if (!topic.trim()) return;
 
     setLoading(true);
-    setOutput("");
-    setImageUrl(null);
+    setDraftContent("");
+    setDraftImage(null);
+    setImageLoadError(false);
     setPostId(null);
+    setSuggestedImagePrompt(null);
     setPreviewPlatform(platform);
 
     try {
-      const { value } = await generatePost(topic.trim(), platform);
+      const result = await generatePost(
+        topic.trim(),
+        platform,
+        vibeOverride || undefined
+      );
 
-      for await (const chunk of readStreamableValue(value)) {
-        if (chunk != null) {
-          setOutput(chunk);
-        }
+      if (result.success) {
+        setDraftContent(result.content);
+        setSuggestedImagePrompt(result.suggestedImagePrompt);
+      } else {
+        setDraftContent(`Error: ${result.error}`);
       }
     } catch (err) {
-      setOutput(
+      setDraftContent(
         `Error: ${err instanceof Error ? err.message : "Generation failed"}`
       );
     } finally {
@@ -128,32 +194,32 @@ export function PostPreviewCard() {
   }
 
   async function handleGenerateImage() {
-    if (!output.trim()) {
+    if (!draftContent.trim()) {
       toast.error("Generate post content first.");
       return;
     }
 
-    setImageLoading(true);
-    setImageUrl(null);
+    const imagePrompt = suggestedImagePrompt?.trim() || draftContent.trim();
 
     try {
-      const result = await generateImage(output.trim());
+      const result = await generateImage(imagePrompt);
 
       if (result.success) {
-        setImageUrl(result.imageUrl);
+        setImageLoadError(false);
+        setDraftImage(result.imageUrl);
 
         const saveResult = await savePostImage(
           postId,
-          output.trim(),
+          draftContent.trim(),
           result.imageUrl,
           platform
         );
 
         if (saveResult.success) {
           setPostId(saveResult.postId);
-          toast.success("Image generated and saved to post.");
+          toast.success("Image URL generated and saved to post.");
         } else {
-          toast.warning("Image generated but could not save to Supabase.", {
+          toast.warning("Image URL generated but could not save to Supabase.", {
             description: saveResult.error,
           });
         }
@@ -166,13 +232,11 @@ export function PostPreviewCard() {
       toast.error("Failed to generate image", {
         description: err instanceof Error ? err.message : "Unknown error",
       });
-    } finally {
-      setImageLoading(false);
     }
   }
 
   async function handleSaveDraft() {
-    if (!output.trim()) {
+    if (!draftContent.trim()) {
       toast.error("No content to save.");
       return;
     }
@@ -182,9 +246,9 @@ export function PostPreviewCard() {
     try {
       const result = await savePostDraft(
         postId,
-        output.trim(),
+        draftContent.trim(),
         platform,
-        imageUrl
+        draftImage
       );
 
       if (result.success) {
@@ -205,7 +269,7 @@ export function PostPreviewCard() {
   }
 
   async function handlePostNow() {
-    if (!output.trim()) {
+    if (!draftContent.trim()) {
       toast.error("No content to post. Generate content first.");
       return;
     }
@@ -213,14 +277,15 @@ export function PostPreviewCard() {
     setPublishing(true);
 
     try {
-      const result = await publishPost(output.trim(), platform);
+      const result = await postNow({
+        content: draftContent.trim(),
+        image: draftImage,
+        platforms: [platform],
+      });
 
       if (result.success) {
-        toast.success("Post published successfully!", {
-          description: result.postIds?.length
-            ? `Posted to ${result.postIds.map((p) => p.platform).join(", ")}`
-            : undefined,
-        });
+        toast.success("Posted!");
+        router.push("/");
       } else {
         toast.error("Failed to publish post", {
           description: result.error,
@@ -235,10 +300,48 @@ export function PostPreviewCard() {
     }
   }
 
-  function handleDownload() {
-    if (!imageUrl) return;
+  async function handleSchedule() {
+    if (!draftContent.trim()) {
+      toast.error("No content to schedule. Generate content first.");
+      return;
+    }
+    if (!scheduleDate) {
+      toast.error("Please select a date and time.");
+      return;
+    }
 
-    fetch(imageUrl)
+    setScheduling(true);
+
+    try {
+      const result = await schedulePost({
+        content: draftContent.trim(),
+        image: draftImage,
+        date: new Date(scheduleDate),
+        platform,
+      });
+
+      if (result.success) {
+        toast.success("Post scheduled!");
+        setSchedulePopoverOpen(false);
+        setScheduleDate("");
+      } else {
+        toast.error("Failed to schedule post", {
+          description: result.error,
+        });
+      }
+    } catch (err) {
+      toast.error("Failed to schedule post", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setScheduling(false);
+    }
+  }
+
+  function handleDownload() {
+    if (!draftImage) return;
+
+    fetch(draftImage)
       .then((res) => res.blob())
       .then((blob) => {
         const url = URL.createObjectURL(blob);
@@ -256,25 +359,39 @@ export function PostPreviewCard() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-      {/* Left: Input */}
+      {/* Left: Controls */}
       <div className="space-y-4">
         <div className="space-y-3">
-          <input
-            type="text"
-            placeholder="Topic (e.g. Product launch)"
+          <label className="block text-sm font-medium text-zinc-400">
+            What is this post about?
+          </label>
+          <textarea
+            placeholder="e.g. Product launch, team milestone, industry insight..."
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50"
+            rows={4}
+            className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:border-accent-violet/50 resize-none"
           />
           <div className="flex gap-3 flex-wrap">
             <select
               value={platform}
               onChange={(e) => setPlatform(e.target.value as Platform)}
-              className="rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-white focus:outline-none focus:border-amber-500/50"
+              className="rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-white focus:outline-none focus:border-accent-violet/50 [&_option]:bg-white [&_option]:text-zinc-900"
             >
-              {PLATFORMS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
+              {PLATFORM_OPTIONS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={vibeOverride}
+              onChange={(e) => setVibeOverride(e.target.value)}
+              className="rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-white focus:outline-none focus:border-accent-violet/50 [&_option]:bg-white [&_option]:text-zinc-900"
+            >
+              {VIBE_OVERRIDES.map((v) => (
+                <option key={v.value || "none"} value={v.value}>
+                  {v.label}
                 </option>
               ))}
             </select>
@@ -283,9 +400,9 @@ export function PostPreviewCard() {
               whileTap={{ scale: 0.98 }}
               onClick={handleGenerate}
               disabled={loading}
-              className="rounded-xl bg-amber-500/20 border border-amber-500/30 px-6 py-3 text-amber-400 font-medium disabled:opacity-50 flex items-center gap-2"
+              className="rounded-xl bg-accent-violet/30 border border-accent-violet/40 px-6 py-3 text-accent-pink font-medium disabled:opacity-50 flex items-center gap-2 hover:bg-accent-violet/40 transition-colors"
             >
-              {loading ? "Generating…" : "Generate"}
+              {loading ? "Generating…" : "Generate Draft"}
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
             </motion.button>
           </div>
@@ -295,34 +412,56 @@ export function PostPreviewCard() {
       {/* Right: Preview */}
       <div className="lg:sticky lg:top-8">
         <div className="mx-auto">
-          {/* Platform Toggle */}
-          <div className="flex gap-0 mb-4 rounded-xl bg-white/5 p-1 border border-white/10 w-fit">
-            {PLATFORMS.map((p) => (
-              <button
-                key={p}
-                onClick={() => setPreviewPlatform(p)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  previewPlatform === p
-                    ? "bg-white/10 text-white"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
+          {/* Platform Toggle - only when we have content */}
+          {draftContent && (
+            <div className="flex gap-0 mb-4 rounded-xl bg-white/5 p-1 border border-white/10 w-fit">
+              {PLATFORMS.map((p) => {
+                const Icon = PLATFORM_ICONS[p];
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPreviewPlatform(p)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                      previewPlatform === p
+                        ? "bg-accent-violet/20 text-white"
+                        : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    {Icon && <Icon className="h-4 w-4" />}
+                    {PLATFORM_LABELS[p]}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-          {/* Preview container - dimensions match platform */}
-          <div className={`${previewStyles.container} mx-auto`}>
-            <div
-              className={`${previewStyles.bg} rounded-2xl border border-white/10 overflow-hidden shadow-xl transition-all duration-300`}
-            >
-            {output ? (
+          {/* Skeleton Loader - while Gemini is thinking */}
+          {loading ? (
+            <div className={`${previewStyles.container} mx-auto`}>
+              <div className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden shadow-xl">
+                <div className="p-4 space-y-3 border-b border-white/10">
+                  <div className="shimmer h-4 w-3/4 rounded bg-white/10" />
+                  <div className="shimmer h-4 w-full rounded bg-white/10" />
+                  <div className="shimmer h-4 w-2/3 rounded bg-white/10" />
+                </div>
+                <div
+                  className={`shimmer w-full ${previewStyles.imageAspect} bg-white/10`}
+                />
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Preview container - dimensions match platform */}
+              <div className={`${previewStyles.container} mx-auto`}>
+                <div
+                  className={`${previewStyles.bg} rounded-2xl border border-white/10 overflow-hidden shadow-xl transition-all duration-300`}
+                >
+            {draftContent ? (
               <>
                 <div className="p-4 border-b border-[#e7e7e7]">
                   <AutoResizeTextarea
-                    value={output}
-                    onChange={setOutput}
+                    value={draftContent}
+                    onChange={setDraftContent}
                     placeholder="Write your post..."
                     platform={previewPlatform}
                   />
@@ -330,54 +469,71 @@ export function PostPreviewCard() {
 
                 {/* Image section */}
                 <div className="relative">
-                  {imageLoading ? (
-                    <div
-                      className={`shimmer w-full ${previewStyles.imageAspect} bg-slate-200`}
-                    />
-                  ) : imageUrl ? (
+                  {draftImage ? (
                     <div className={`relative ${previewStyles.imageAspect}`}>
-                      <Image
-                        src={imageUrl}
-                        alt="Generated"
-                        fill
-                        className="object-cover"
-                        sizes="(max-width: 600px) 100vw, 600px"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
-                      <div className="absolute top-2 right-2 flex gap-2 pointer-events-auto">
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={handleGenerateImage}
-                          disabled={imageLoading}
-                          className="p-2 rounded-lg bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 transition-colors"
-                          title="Regenerate"
+                      {imageLoadError ? (
+                        <div
+                          className={`w-full h-full flex flex-col items-center justify-center gap-2 bg-slate-100 text-slate-500 border border-dashed border-slate-300 ${previewStyles.imageAspect}`}
                         >
-                          <RefreshCw className="h-4 w-4" />
-                        </motion.button>
-                      </div>
-                      <div className="absolute bottom-2 left-2 right-2 flex justify-end pointer-events-auto">
-                        <motion.button
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={handleDownload}
-                          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 transition-colors text-sm font-medium"
-                        >
-                          <Download className="h-4 w-4" />
-                          Download
-                        </motion.button>
-                      </div>
+                          <ImageIcon className="h-10 w-10" />
+                          <span className="text-sm font-medium">Image failed to load</span>
+                          <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => {
+                              setImageLoadError(false);
+                              setDraftImage(null);
+                            }}
+                            className="text-xs text-slate-600 hover:text-slate-800 underline"
+                          >
+                            Try again
+                          </motion.button>
+                        </div>
+                      ) : (
+                        <>
+                          <Image
+                            src={draftImage}
+                            alt="Generated"
+                            fill
+                            className="object-cover"
+                            sizes="(max-width: 600px) 100vw, 600px"
+                            onError={() => setImageLoadError(true)}
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
+                          <div className="absolute top-2 right-2 flex gap-2 pointer-events-auto">
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={handleGenerateImage}
+                            className="p-2 rounded-lg bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 transition-colors"
+                            title="Regenerate"
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                          </motion.button>
+                        </div>
+                        <div className="absolute bottom-2 left-2 right-2 flex justify-end pointer-events-auto">
+                          <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={handleDownload}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 transition-colors text-sm font-medium"
+                          >
+                            <Download className="h-4 w-4" />
+                            Download
+                          </motion.button>
+                        </div>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <motion.button
                       whileHover={{ scale: 1.01 }}
                       whileTap={{ scale: 0.99 }}
                       onClick={handleGenerateImage}
-                      disabled={imageLoading}
                       className={`w-full ${previewStyles.imageAspect} border border-dashed border-[#e7e7e7] flex flex-col items-center justify-center gap-2 text-[#657786] hover:bg-slate-50 hover:border-[#ccc] transition-colors`}
                     >
                       <ImageIcon className="h-10 w-10" />
-                      <span className="text-sm font-medium">Generate Image</span>
+                      <span className="text-sm font-medium">Generate Visual</span>
                     </motion.button>
                   )}
                 </div>
@@ -391,14 +547,14 @@ export function PostPreviewCard() {
         </div>
 
           {/* Action buttons */}
-          {output && (
-            <div className="flex gap-3 mt-4">
+          {draftContent && (
+            <div className="flex flex-wrap gap-3 mt-4">
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleSaveDraft}
                 disabled={saving}
-                className="flex-1 rounded-xl bg-white/10 border border-white/20 px-4 py-3 text-slate-200 font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                className="rounded-xl bg-white/10 border border-white/20 px-4 py-3 text-slate-200 font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {saving ? "Saving…" : "Save Draft"}
                 {saving ? (
@@ -407,12 +563,60 @@ export function PostPreviewCard() {
                   <Save className="h-4 w-4" />
                 )}
               </motion.button>
+              <div className="relative" ref={schedulePopoverRef}>
+                <motion.button
+                  ref={scheduleButtonRef}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setSchedulePopoverOpen((o) => !o)}
+                  disabled={scheduling}
+                  className="rounded-xl bg-white/10 border border-white/20 px-4 py-3 text-slate-200 font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {scheduling ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Calendar className="h-4 w-4" />
+                  )}
+                  Schedule
+                </motion.button>
+                {schedulePopoverOpen && (
+                  <div className="absolute left-0 top-full mt-2 z-50 min-w-[280px] rounded-xl bg-zinc-900 border border-white/10 shadow-xl p-4">
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      Date & Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      min={new Date().toISOString().slice(0, 16)}
+                      className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white focus:outline-none focus:border-accent-violet/50"
+                    />
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={() => setSchedulePopoverOpen(false)}
+                        className="flex-1 rounded-lg px-3 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={handleSchedule}
+                        disabled={scheduling || !scheduleDate}
+                        className="flex-1 rounded-lg bg-accent-violet/30 border border-accent-violet/40 px-3 py-2 text-sm text-accent-pink font-medium disabled:opacity-50"
+                      >
+                        {scheduling ? "Scheduling…" : "Schedule"}
+                      </motion.button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handlePostNow}
                 disabled={publishing}
-                className="flex-1 rounded-xl bg-emerald-500/20 border border-emerald-500/30 px-4 py-3 text-emerald-400 font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                className="rounded-xl bg-emerald-500/20 border border-emerald-500/30 px-4 py-3 text-emerald-400 font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {publishing ? "Publishing…" : "Post Now"}
                 {publishing ? (
@@ -422,6 +626,8 @@ export function PostPreviewCard() {
                 )}
               </motion.button>
             </div>
+          )}
+            </>
           )}
         </div>
       </div>

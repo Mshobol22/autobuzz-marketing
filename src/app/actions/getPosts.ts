@@ -2,16 +2,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-
-export type Post = {
-  id: string;
-  content: string | null;
-  image_url: string | null;
-  platform: string | null;
-  status: string | null;
-  scheduled_for: string | null;
-  created_at: string;
-};
+import type { Post } from "@/lib/types";
 
 export async function getDraftPosts(): Promise<Post[]> {
   const { userId } = await auth();

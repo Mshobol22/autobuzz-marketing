@@ -3,11 +3,14 @@
 import { DayPicker } from "react-day-picker";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
-import { CalendarIcon, Clock, Loader2, List } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CalendarIcon, Clock, Loader2, List, FileText } from "lucide-react";
+import { useEffect, useState, useMemo } from "react";
 import { toast } from "sonner";
-import { getDraftPosts, type Post } from "@/app/actions/getPosts";
-import { schedulePost } from "@/app/actions/schedulePost";
+import { getDraftPosts } from "@/app/actions/getPosts";
+import type { Post } from "@/lib/types";
+import { scheduleDraftPost } from "@/app/actions/schedulePost";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { parseScheduledDate } from "@/lib/dateUtils";
 import "react-day-picker/style.css";
 
 const MOCK_QUEUED = [
@@ -16,23 +19,61 @@ const MOCK_QUEUED = [
   { id: "3", title: "Instagram: Behind the Scenes", date: "Feb 18th", platform: "Instagram" },
 ];
 
-export default function SchedulePage() {
+function ScheduleContent() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [selectedTime, setSelectedTime] = useState("12:00");
   const [scheduling, setScheduling] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    getDraftPosts().then((data) => {
-      setPosts(data);
-      setLoading(false);
-      if (data.length > 0) {
-        setSelectedPostId((prev) => prev || data[0].id);
-      }
-    });
+    setMounted(true);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const data = await getDraftPosts();
+        if (cancelled) return;
+
+        setPosts(Array.isArray(data) ? data : []);
+        setError(null);
+        if (Array.isArray(data) && data.length > 0) {
+          setSelectedPostId((prev) => prev || data[0].id);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : "Failed to load posts";
+        console.error("[Schedule] getDraftPosts error:", err);
+        setError(message);
+        setPosts([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const todayStart = useMemo(() => {
+    if (!mounted) return null;
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, [mounted]);
+
+  const defaultSelectedDate = useMemo(() => {
+    if (!mounted) return undefined;
+    return new Date();
+  }, [mounted]);
 
   async function handleSchedule() {
     if (!selectedPostId || !selectedDate) {
@@ -52,7 +93,7 @@ export default function SchedulePage() {
     setScheduling(true);
 
     try {
-      const result = await schedulePost(selectedPostId, scheduledFor);
+      const result = await scheduleDraftPost(selectedPostId, scheduledFor);
 
       if (result.success) {
         toast.success("Post scheduled!", {
@@ -73,9 +114,9 @@ export default function SchedulePage() {
         toast.error("Failed to schedule", { description: result.error });
       }
     } catch (err) {
-      toast.error("Failed to schedule", {
-        description: err instanceof Error ? err.message : "Unknown error",
-      });
+      const message = err instanceof Error ? err.message : "Unknown error";
+      console.error("[Schedule] schedulePost error:", err);
+      toast.error("Failed to schedule", { description: message });
     } finally {
       setScheduling(false);
     }
@@ -89,12 +130,28 @@ export default function SchedulePage() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="p-6 lg:p-8 max-w-5xl mx-auto">
+        <h1 className="text-3xl font-bold text-white font-serif">Schedule</h1>
+        <div className="mt-6 art-card p-6">
+          <p className="text-rose-400">Failed to load posts: {error}</p>
+          <p className="mt-2 text-sm text-zinc-500">
+            Check the console for details. You may need to create a post in Generator first.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const safePosts = Array.isArray(posts) ? posts : [];
+
   return (
     <div className="p-6 lg:p-8 max-w-5xl mx-auto">
       <motion.h1
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-3xl font-bold text-zinc-100"
+        className="text-3xl font-bold text-white font-serif"
       >
         Schedule
       </motion.h1>
@@ -112,7 +169,7 @@ export default function SchedulePage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="rounded-2xl border border-white/10 bg-zinc-900/50 backdrop-blur-md p-6 mb-8"
+        className="art-card p-6 mb-8"
       >
         <h2 className="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
           <CalendarIcon className="h-5 w-5 text-zinc-400" />
@@ -121,40 +178,44 @@ export default function SchedulePage() {
 
         <div className="flex flex-col lg:flex-row gap-8">
           <div className="rounded-xl overflow-hidden [&_.rdp]:m-0">
-            <DayPicker
-              mode="single"
-              selected={selectedDate}
-              onSelect={setSelectedDate}
-              disabled={(date) =>
-                date < new Date(new Date().setHours(0, 0, 0, 0))
-              }
-              className="rdp-custom bg-zinc-800/40 rounded-xl p-4 border border-white/10"
-              classNames={{
-                months: "flex flex-col sm:flex-row gap-4",
-                month: "flex flex-col gap-4",
-                month_caption:
-                  "flex justify-center pt-1 relative items-center",
-                caption_label: "text-sm font-medium text-zinc-100",
-                nav: "flex items-center gap-1",
-                button_previous:
-                  "absolute left-1 h-9 w-9 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 flex items-center justify-center",
-                button_next:
-                  "absolute right-1 h-9 w-9 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 flex items-center justify-center",
-                month_grid: "w-full border-collapse",
-                weekdays: "flex",
-                weekday: "text-zinc-500 text-xs font-medium w-9 rounded-lg py-1",
-                week: "flex w-full mt-1",
-                day: "h-9 w-9 p-0 text-center text-sm",
-                day_button:
-                  "h-9 w-9 rounded-lg text-zinc-300 hover:bg-white/10 hover:text-white focus:bg-zinc-500/30 focus:text-zinc-100",
-                selected:
-                  "bg-zinc-500/30 text-zinc-100 hover:bg-zinc-500/40",
-                today: "font-semibold text-zinc-200",
-                disabled: "text-zinc-600 opacity-50",
-                outside: "text-zinc-600",
-                hidden: "invisible",
-              }}
-            />
+            {mounted ? (
+              <DayPicker
+                mode="single"
+                selected={selectedDate ?? defaultSelectedDate}
+                onSelect={setSelectedDate}
+                disabled={(date) =>
+                  todayStart ? date < todayStart : false
+                }
+                className="rdp-custom bg-zinc-800/40 rounded-xl p-4 border border-white/10"
+                classNames={{
+                  months: "flex flex-col sm:flex-row gap-4",
+                  month: "flex flex-col gap-4",
+                  month_caption:
+                    "flex justify-center pt-1 relative items-center",
+                  caption_label: "text-sm font-medium text-zinc-100",
+                  nav: "flex items-center gap-1",
+                  button_previous:
+                    "absolute left-1 h-9 w-9 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 flex items-center justify-center",
+                  button_next:
+                    "absolute right-1 h-9 w-9 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 flex items-center justify-center",
+                  month_grid: "w-full border-collapse",
+                  weekdays: "flex",
+                  weekday: "text-zinc-500 text-xs font-medium w-9 rounded-lg py-1",
+                  week: "flex w-full mt-1",
+                  day: "h-9 w-9 p-0 text-center text-sm",
+                  day_button:
+                    "h-9 w-9 rounded-lg text-zinc-300 hover:bg-white/10 hover:text-white focus:bg-zinc-500/30 focus:text-zinc-100",
+                  selected:
+                    "bg-zinc-500/30 text-zinc-100 hover:bg-zinc-500/40",
+                  today: "font-semibold text-zinc-200",
+                  disabled: "text-zinc-600 opacity-50",
+                  outside: "text-zinc-600",
+                  hidden: "invisible",
+                }}
+              />
+            ) : (
+              <div className="h-64 animate-pulse bg-zinc-800/40 rounded-xl" />
+            )}
           </div>
 
           <div className="flex-1 space-y-4">
@@ -164,7 +225,7 @@ export default function SchedulePage() {
                 type="time"
                 value={selectedTime}
                 onChange={(e) => setSelectedTime(e.target.value)}
-                className="rounded-lg bg-zinc-800/60 border border-white/10 px-3 py-2 text-zinc-100 focus:outline-none focus:border-zinc-500/50"
+                className="rounded-lg bg-zinc-800/60 border border-white/10 px-3 py-2 text-zinc-100 focus:outline-none focus:border-accent-violet/50"
               />
             </div>
 
@@ -172,32 +233,45 @@ export default function SchedulePage() {
               <label className="text-sm text-zinc-400 mb-2 block">
                 Select post
               </label>
-              <select
-                value={selectedPostId ?? ""}
-                onChange={(e) => setSelectedPostId(e.target.value || null)}
-                className="w-full rounded-xl bg-zinc-800/60 border border-white/10 px-4 py-3 text-zinc-100 focus:outline-none focus:border-zinc-500/50"
-              >
-                {posts.map((post) => (
-                  <option key={post.id} value={post.id}>
-                    {post.content?.slice(0, 50) ?? "Untitled"}...
-                    {post.scheduled_for && " (scheduled)"}
-                  </option>
-                ))}
-              </select>
+              {safePosts.length === 0 ? (
+                <div className="rounded-xl border border-white/10 bg-zinc-800/40 px-4 py-8 flex flex-col items-center justify-center gap-2 text-center">
+                  <FileText className="h-10 w-10 text-zinc-500" />
+                  <p className="text-sm text-zinc-400">No draft posts</p>
+                  <p className="text-xs text-zinc-500">
+                    Create a post in Generator first, then return here to schedule it.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <select
+                    value={selectedPostId ?? ""}
+                    onChange={(e) => setSelectedPostId(e.target.value || null)}
+                    className="w-full rounded-xl bg-zinc-800/60 border border-white/10 px-4 py-3 text-zinc-100 focus:outline-none focus:border-accent-violet/50"
+                  >
+                    {safePosts.map((post) => {
+                      const hasValidDate = parseScheduledDate(post.scheduled_for) != null;
+                      return (
+                        <option key={post.id} value={post.id}>
+                          {(post.content?.slice(0, 50) ?? "Untitled")}
+                          {post.content && (post.content.length > 50 ? "…" : "")}
+                          {hasValidDate ? " (scheduled)" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleSchedule}
+                    disabled={scheduling || !selectedPostId || !selectedDate}
+                    className="w-full mt-4 rounded-xl bg-accent-violet/40 border border-accent-violet/50 px-4 py-3 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-accent-violet/50 transition-colors"
+                  >
+                    {scheduling ? "Scheduling…" : "Schedule Post"}
+                    {scheduling && <Loader2 className="h-4 w-4 animate-spin" />}
+                  </motion.button>
+                </>
+              )}
             </div>
-
-            {posts.length > 0 && (
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleSchedule}
-                disabled={scheduling || !selectedPostId || !selectedDate}
-                className="w-full rounded-xl bg-zinc-600/40 border border-white/10 px-4 py-3 text-zinc-100 font-medium disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-zinc-600/60"
-              >
-                {scheduling ? "Scheduling…" : "Schedule Post"}
-                {scheduling && <Loader2 className="h-4 w-4 animate-spin" />}
-              </motion.button>
-            )}
           </div>
         </div>
       </motion.div>
@@ -207,7 +281,7 @@ export default function SchedulePage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="rounded-2xl border border-white/10 bg-zinc-900/50 backdrop-blur-md p-6"
+        className="art-card p-6"
       >
         <h2 className="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
           <List className="h-5 w-5 text-zinc-400" />
@@ -228,5 +302,13 @@ export default function SchedulePage() {
         </ul>
       </motion.div>
     </div>
+  );
+}
+
+export default function SchedulePage() {
+  return (
+    <ErrorBoundary>
+      <ScheduleContent />
+    </ErrorBoundary>
   );
 }

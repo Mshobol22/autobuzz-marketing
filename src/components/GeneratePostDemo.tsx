@@ -1,6 +1,5 @@
 "use client";
 
-import { readStreamableValue } from "@ai-sdk/rsc";
 import { motion } from "framer-motion";
 import { Loader2, Send } from "lucide-react";
 import { useState } from "react";
@@ -22,12 +21,12 @@ export function GeneratePostDemo() {
     setOutput("");
 
     try {
-      const { value } = await generatePost(topic.trim(), platform);
+      const result = await generatePost(topic.trim(), platform);
 
-      for await (const chunk of readStreamableValue(value)) {
-        if (chunk != null) {
-          setOutput(chunk);
-        }
+      if (result.success) {
+        setOutput(result.content);
+      } else {
+        setOutput(`Error: ${result.error}`);
       }
     } catch (err) {
       setOutput(`Error: ${err instanceof Error ? err.message : "Generation failed"}`);
@@ -99,7 +98,7 @@ export function GeneratePostDemo() {
       </div>
       {output && (
         <div className="space-y-3">
-          <div className="glass-card p-4 text-slate-300 whitespace-pre-wrap">
+          <div className="art-card p-4 text-zinc-300 whitespace-pre-wrap">
             {output}
           </div>
           <motion.button

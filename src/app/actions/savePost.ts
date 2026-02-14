@@ -2,10 +2,15 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import type { SavePostResult } from "@/lib/types";
 
-export type SavePostResult =
-  | { success: true; postId: string }
-  | { success: false; error: string };
+/** Backend-only Supabase client using service role key (bypasses RLS) */
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
 
 export async function savePostDraft(
   postId: string | null,
@@ -18,14 +23,10 @@ export async function savePostDraft(
     return { success: false, error: "Not authenticated" };
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseServiceKey) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
     return { success: false, error: "Supabase is not configured" };
   }
-
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
     const payload = {
@@ -76,14 +77,10 @@ export async function savePostImage(
     return { success: false, error: "Not authenticated" };
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseServiceKey) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
     return { success: false, error: "Supabase is not configured" };
   }
-
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
     if (postId) {

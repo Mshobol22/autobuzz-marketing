@@ -4,21 +4,31 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const AYRSHARE_API_URL = "https://app.ayrshare.com/api/post";
+const AYRSHARE_API_URL = "https://api.ayrshare.com/api/post";
 
 const PLATFORM_MAP: Record<string, string> = {
   Twitter: "twitter",
   LinkedIn: "linkedin",
   Instagram: "instagram",
   Facebook: "facebook",
+  facebook: "facebook",
 };
 
 async function publishToAyrshare(
   content: string,
   platform: string,
-  apiKey: string
+  apiKey: string,
+  imageUrl?: string | null
 ): Promise<{ success: boolean; error?: string }> {
   const ayrsharePlatform = PLATFORM_MAP[platform] ?? platform.toLowerCase();
+
+  const body: Record<string, unknown> = {
+    post: content,
+    platforms: [ayrsharePlatform],
+  };
+  if (imageUrl?.trim() && imageUrl.startsWith("https://")) {
+    body.mediaUrls = [imageUrl.trim()];
+  }
 
   try {
     const res = await fetch(AYRSHARE_API_URL, {
@@ -27,10 +37,7 @@ async function publishToAyrshare(
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        post: content,
-        platforms: [ayrsharePlatform],
-      }),
+      body: JSON.stringify(body),
     });
 
     const data = await res.json();
@@ -85,7 +92,7 @@ Deno.serve(async (req) => {
 
     const { data: posts, error: fetchError } = await supabase
       .from("posts")
-      .select("id, content, platform")
+      .select("id, content, platform, image_url")
       .eq("status", "scheduled")
       .lte("scheduled_for", now);
 
@@ -125,7 +132,8 @@ Deno.serve(async (req) => {
       const publishResult = await publishToAyrshare(
         post.content,
         post.platform,
-        ayrshareApiKey
+        ayrshareApiKey,
+        post.image_url
       );
 
       if (publishResult.success) {

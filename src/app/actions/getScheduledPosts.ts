@@ -2,13 +2,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-
-export type ScheduledPost = {
-  id: string;
-  content: string | null;
-  platform: string | null;
-  scheduled_for: string | null;
-};
+import type { ScheduledPost } from "@/lib/types";
 
 export async function getUpcomingScheduledPosts(
   limit = 2

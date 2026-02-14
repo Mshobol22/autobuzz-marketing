@@ -1,18 +1,23 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
+import { Space_Mono, Playfair_Display } from "next/font/google";
 import { Toaster } from "sonner";
 import { ClerkProviderWrapper } from "@/components/providers/ClerkProvider";
+import { LenisProvider } from "@/components/providers/LenisProvider";
+import { Background } from "@/components/ui/Background";
+import { CornerNav } from "@/components/ui/CornerNav";
+import { CursorEffects } from "@/components/ui/CursorEffects";
 import "./globals.css";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
+const spaceMono = Space_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  weight: ["400", "700"],
+  display: "swap",
 });
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  variable: "--font-serif",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -27,22 +32,25 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${spaceMono.variable} ${playfair.variable} antialiased font-mono`}>
+        <Background />
+        <CursorEffects />
         <ClerkProviderWrapper>
-          {children}
-          <Toaster
-            theme="dark"
-            position="bottom-right"
-            toastOptions={{
-              classNames: {
-                toast: "glass-card border border-white/10",
-                success: "border-emerald-500/30",
-                error: "border-rose-500/30",
-              },
-            }}
-          />
+          <LenisProvider>
+            <CornerNav />
+            {children}
+            <Toaster
+              theme="dark"
+              position="bottom-right"
+              toastOptions={{
+                classNames: {
+                  toast: "border border-white/10 bg-[#0a0a0a]",
+                  success: "border-emerald-500/30",
+                  error: "border-rose-500/30",
+                },
+              }}
+            />
+          </LenisProvider>
         </ClerkProviderWrapper>
       </body>
     </html>

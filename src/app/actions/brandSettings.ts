@@ -2,30 +2,11 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-
-export const DEFAULT_BRAND_SETTINGS = {
-  company_name: "Barakah Chaser",
-  core_values:
-    "Speed, Automation, Premium Design, Reliable Service, Community",
-  tone_of_voice:
-    'Professional yet Witty, High-Tech, "Vibecoder" Energy',
-  target_audience:
-    "Startup Founders, Developers, Chicago Locals, Small Business Owners",
-  product_description:
-    "We build high-end automated software solutions and offer reliable roadside assistance in Chicago. We focus on speed and premium design.",
-} as const;
-
-export type BrandSettingsForm = {
-  company_name: string;
-  core_values: string;
-  tone_of_voice: string;
-  target_audience: string;
-  product_description: string;
-};
-
-export type BrandSettingsResult =
-  | { success: true }
-  | { success: false; error: string };
+import {
+  DEFAULT_BRAND_SETTINGS,
+  type BrandSettingsForm,
+  type BrandSettingsResult,
+} from "@/lib/types";
 
 function getDefaults(): BrandSettingsForm {
   return { ...DEFAULT_BRAND_SETTINGS };

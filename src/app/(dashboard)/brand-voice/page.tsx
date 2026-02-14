@@ -13,12 +13,8 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import {
-  getBrandSettingsForUser,
-  updateBrandSettings,
-  DEFAULT_BRAND_SETTINGS,
-  type BrandSettingsForm,
-} from "@/app/actions/brandSettings";
+import { getBrandSettingsForUser, updateBrandSettings } from "@/app/actions/brandSettings";
+import { DEFAULT_BRAND_SETTINGS, type BrandSettingsForm } from "@/lib/types";
 
 const container = {
   hidden: { opacity: 0 },
@@ -170,7 +166,7 @@ export default function BrandVoicePage() {
             <motion.div
               key={section.id}
               variants={item}
-              className={`glass-card p-6 group hover:border-white/20 transition-all duration-300 ${
+              className={`art-card p-6 group ${
                 section.size === "wide" ? "lg:col-span-4" : ""
               }`}
             >
@@ -209,7 +205,7 @@ export default function BrandVoicePage() {
           whileTap={{ scale: 0.98 }}
           onClick={handleSave}
           disabled={saving}
-          className="rounded-xl bg-gradient-to-r from-zinc-600/40 to-zinc-500/30 border border-white/10 px-6 py-3 text-zinc-100 font-medium disabled:opacity-50 flex items-center gap-2"
+          className="rounded-xl bg-accent-violet/40 border border-accent-violet/50 px-6 py-3 text-white font-medium disabled:opacity-50 flex items-center gap-2 hover:bg-accent-violet/50 transition-colors"
         >
           {saving ? "Saving…" : "Save"}
           {saving ? (
