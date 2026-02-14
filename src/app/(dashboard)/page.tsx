@@ -390,8 +390,8 @@ export default function DashboardPage() {
                     labelFormatter={(_, payload) =>
                       payload?.[0]?.payload?.label ?? ""
                     }
-                    formatter={(value: number) => [
-                      `${value} post${value !== 1 ? "s" : ""}`,
+                    formatter={(value: number | undefined) => [
+                      `${value ?? 0} post${(value ?? 0) !== 1 ? "s" : ""}`,
                       "Posts",
                     ]}
                   />

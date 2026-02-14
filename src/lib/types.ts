@@ -23,10 +23,6 @@ export type SavePostResult =
   | { success: true; postId: string }
   | { success: false; error: string };
 
-export type PublishPostResult =
-  | { success: true; id: string; postIds?: Array<{ platform: string; postUrl?: string }> }
-  | { success: false; error: string };
-
 export type GenerateImageResult =
   | { success: true; imageUrl: string }
   | { success: false; error: string };
