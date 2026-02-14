@@ -7,17 +7,13 @@ import { CalendarIcon, Clock, Loader2, List, FileText } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { toast } from "sonner";
 import { getDraftPosts } from "@/app/actions/getPosts";
+import { getUpcomingScheduledPosts } from "@/app/actions/getScheduledPosts";
 import type { Post } from "@/lib/types";
 import { scheduleDraftPost } from "@/app/actions/schedulePost";
+import { PostEditorPanel } from "@/components/PostEditorPanel";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { parseScheduledDate } from "@/lib/dateUtils";
 import "react-day-picker/style.css";
-
-const MOCK_QUEUED = [
-  { id: "1", title: "Tweet: Product Launch", date: "Feb 14th", platform: "Twitter" },
-  { id: "2", title: "LinkedIn: Team Update", date: "Feb 16th", platform: "LinkedIn" },
-  { id: "3", title: "Instagram: Behind the Scenes", date: "Feb 18th", platform: "Instagram" },
-];
 
 function ScheduleContent() {
   const [posts, setPosts] = useState<Post[]>([]);
@@ -28,6 +24,11 @@ function ScheduleContent() {
   const [selectedTime, setSelectedTime] = useState("12:00");
   const [scheduling, setScheduling] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [queuedPosts, setQueuedPosts] = useState<
+    Awaited<ReturnType<typeof getUpcomingScheduledPosts>>
+  >([]);
+  const [editorPostId, setEditorPostId] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -61,6 +62,12 @@ function ScheduleContent() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    getUpcomingScheduledPosts(20).then((data) => {
+      setQueuedPosts(Array.isArray(data) ? data : []);
+    });
   }, []);
 
   const todayStart = useMemo(() => {
@@ -100,16 +107,11 @@ function ScheduleContent() {
           description: `Scheduled for ${format(scheduledFor, "PPp")}`,
         });
         setPosts((prev) =>
-          prev.map((p) =>
-            p.id === selectedPostId
-              ? {
-                  ...p,
-                  status: "scheduled",
-                  scheduled_for: scheduledFor.toISOString(),
-                }
-              : p
-          )
+          prev.filter((p) => p.id !== selectedPostId)
         );
+        getUpcomingScheduledPosts(20).then((data) => {
+          setQueuedPosts(Array.isArray(data) ? data : []);
+        });
       } else {
         toast.error("Failed to schedule", { description: result.error });
       }
@@ -288,19 +290,59 @@ function ScheduleContent() {
           Queued Posts
         </h2>
         <ul className="space-y-3">
-          {MOCK_QUEUED.map((item) => (
-            <li
-              key={item.id}
-              className="flex items-center justify-between rounded-xl border border-white/10 bg-zinc-800/40 px-4 py-3"
-            >
-              <span className="text-sm font-medium text-zinc-200">
-                {item.title}
+          {queuedPosts.length === 0 ? (
+            <li className="rounded-xl border border-dashed border-white/10 bg-zinc-800/40 px-4 py-8 flex flex-col items-center justify-center gap-2 text-center">
+              <span className="text-sm text-zinc-500">No scheduled posts</span>
+              <span className="text-xs text-zinc-600">
+                Schedule a draft above to see it here.
               </span>
-              <span className="text-xs text-zinc-500">{item.date}</span>
             </li>
-          ))}
+          ) : (
+            queuedPosts.map((post) => (
+              <li key={post.id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditorPostId(post.id);
+                    setEditorOpen(true);
+                  }}
+                  className="w-full flex items-center justify-between rounded-xl border border-white/10 bg-zinc-800/40 px-4 py-3 hover:bg-zinc-800/60 transition-colors text-left"
+                >
+                  <span className="text-sm font-medium text-zinc-200 truncate flex-1 mr-2">
+                    {post.content?.slice(0, 50) ?? "Untitled"}
+                    {(post.content?.length ?? 0) > 50 ? "…" : ""}
+                  </span>
+                  <span className="text-xs text-zinc-500 flex-shrink-0">
+                    {post.scheduled_for
+                      ? format(
+                          new Date(post.scheduled_for),
+                          "MMM d, HH:mm"
+                        )
+                      : "—"}
+                  </span>
+                </button>
+              </li>
+            ))
+          )}
         </ul>
       </motion.div>
+
+      <PostEditorPanel
+        postId={editorPostId}
+        open={editorOpen}
+        onClose={() => {
+          setEditorOpen(false);
+          setEditorPostId(null);
+        }}
+        onSaved={async () => {
+          const [queue, drafts] = await Promise.all([
+            getUpcomingScheduledPosts(20),
+            getDraftPosts(),
+          ]);
+          setQueuedPosts(Array.isArray(queue) ? queue : []);
+          setPosts(Array.isArray(drafts) ? drafts : []);
+        }}
+      />
     </div>
   );
 }

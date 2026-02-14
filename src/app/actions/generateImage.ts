@@ -1,6 +1,7 @@
 "use server";
 
 import { fal } from "@fal-ai/client";
+import { uploadImage } from "@/lib/uploadImage";
 import type { GenerateImageResult } from "@/lib/types";
 
 const POLLINATIONS_BASE = "https://image.pollinations.ai/prompt";
@@ -67,26 +68,39 @@ export async function generateImage(prompt: string): Promise<GenerateImageResult
 
   const falKey = process.env.FAL_KEY;
 
-  // Try fal.ai first if key is set (fast, ~2–5s)
+  let tempUrl: string;
+
   if (falKey) {
     try {
       fal.config({ credentials: falKey });
-      const url = await fetchFromFal(prompt);
-      return { success: true, imageUrl: url };
+      tempUrl = await fetchFromFal(prompt);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "fal.ai failed";
       console.warn("[generateImage] fal.ai failed:", msg);
-      // Fall through to Pollinations
+      try {
+        tempUrl = await fetchFromPollinations(prompt);
+      } catch (pollErr) {
+        const message =
+          pollErr instanceof Error ? pollErr.message : "Image generation failed";
+        return { success: false, error: message };
+      }
+    }
+  } else {
+    try {
+      tempUrl = await fetchFromPollinations(prompt);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Image generation failed";
+      return { success: false, error: message };
     }
   }
 
-  // Fallback: Pollinations (free, no key, slower)
-  try {
-    const url = await fetchFromPollinations(prompt);
-    return { success: true, imageUrl: url };
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Image generation failed";
-    return { success: false, error: message };
+  const permanentUrl = await uploadImage(tempUrl);
+  if (!permanentUrl) {
+    return {
+      success: false,
+      error: "Image generated but failed to save to storage. Check Supabase Storage (create 'post-images' bucket if needed).",
+    };
   }
+  return { success: true, imageUrl: permanentUrl };
 }

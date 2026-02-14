@@ -1,33 +1,47 @@
 "use client";
 
 import { motion, useScroll, useTransform } from "framer-motion";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, Send, Calendar, FileText, Play } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useUser } from "@clerk/nextjs";
-import { getUpcomingScheduledPosts } from "@/app/actions/getScheduledPosts";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import { formatScheduledDate } from "@/lib/dateUtils";
 import { VelocityText } from "@/components/ui/VelocityText";
 import { Magnetic } from "@/components/ui/Magnetic";
 import { MaskRevealText } from "@/components/ui/MaskRevealText";
+import {
+  getDashboardStats,
+  type DashboardStats,
+} from "@/app/actions/getDashboardStats";
+import { PostEditorPanel } from "@/components/PostEditorPanel";
+import { testDispatch } from "@/app/actions/testDispatch";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 // Astrolabe / navigation dial image for Quick Generate
 const ASTROLABE_IMAGE =
   "https://images.unsplash.com/photo-1590523278135-1e42c2393393?q=80&w=2500&auto=format&fit=crop";
 
-const MOCK_ANALYTICS = [
-  { label: "FOLLOWERS", value: "+400%", sub: "vs last month" },
-  { label: "ENGAGEMENT", value: "+127%", sub: "vs last month" },
-  { label: "REACH", value: "+89%", sub: "vs last month" },
-];
-
 export default function DashboardPage() {
   const { user } = useUser();
-  const [scheduled, setScheduled] = useState<
-    Awaited<ReturnType<typeof getUpcomingScheduledPosts>>
-  >([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editorPostId, setEditorPostId] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [dispatching, setDispatching] = useState(false);
+
+  const refreshStats = () => {
+    getDashboardStats().then(setStats);
+  };
 
   const { scrollYProgress } = useScroll();
   const heroY = useTransform(scrollYProgress, [0, 0.3], [0, -80]);
@@ -35,13 +49,36 @@ export default function DashboardPage() {
   const timelineOpacity = useTransform(scrollYProgress, [0.2, 0.4], [0, 1]);
 
   useEffect(() => {
-    getUpcomingScheduledPosts(10).then((data) => {
-      setScheduled(Array.isArray(data) ? data : []);
+    getDashboardStats().then((data) => {
+      setStats(data);
       setLoading(false);
     });
   }, []);
 
   const displayName = user?.firstName ?? user?.username ?? "USER";
+  const upcomingPosts = stats?.upcomingPosts ?? [];
+
+  async function handleTestDispatch() {
+    setDispatching(true);
+    try {
+      const result = await testDispatch();
+      if (result.errors.length > 0 && result.posts_processed === 0) {
+        toast.error(result.errors[0]?.error ?? "Dispatch failed");
+      } else {
+        toast.success(`Processed ${result.posts_processed} post(s)`, {
+          description:
+            result.errors.length > 0
+              ? `${result.errors.length} failed`
+              : undefined,
+        });
+        refreshStats();
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Dispatch failed");
+    } finally {
+      setDispatching(false);
+    }
+  }
 
   return (
     <div className="min-h-screen">
@@ -74,12 +111,10 @@ export default function DashboardPage() {
           <Magnetic>
             <Link href="/generator">
               <div className="group relative w-full aspect-[21/9] overflow-hidden border border-amber-500/20">
-                {/* Astrolabe image - scale + rotate on hover (navigation dial) */}
                 <div
                   className="absolute inset-0 bg-cover bg-center transition-transform duration-700 ease-out group-hover:scale-110 group-hover:rotate-6"
                   style={{ backgroundImage: `url(${ASTROLABE_IMAGE})` }}
                 />
-                {/* Black gradient overlay for legibility */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-black/40" />
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-6">
                   <div className="p-6 border border-amber-500/40 group-hover:border-amber-500/60 transition-colors">
@@ -98,7 +133,7 @@ export default function DashboardPage() {
         </motion.div>
       </section>
 
-      {/* Section 3: The Feed - Horizontal Timeline */}
+      {/* Section 3: The Queue - Upcoming Schedule */}
       <section className="h-[50vh] flex flex-col px-6 md:px-12">
         <motion.div
           style={{ opacity: timelineOpacity }}
@@ -122,11 +157,16 @@ export default function DashboardPage() {
                   <Loader2 className="h-6 w-6 animate-spin" />
                   <span className="font-mono text-sm">Loading…</span>
                 </div>
-              ) : scheduled.length > 0 ? (
-                scheduled.map((post) => (
-                  <div
+              ) : upcomingPosts.length > 0 ? (
+                upcomingPosts.map((post) => (
+                  <button
                     key={post.id}
-                    className="w-64 h-32 flex-shrink-0 border border-white/10 bg-white/5 flex flex-col justify-between p-4 hover:bg-white/10 transition-colors"
+                    type="button"
+                    onClick={() => {
+                      setEditorPostId(post.id);
+                      setEditorOpen(true);
+                    }}
+                    className="w-64 h-32 flex-shrink-0 border border-white/10 bg-white/5 flex flex-col justify-between p-4 hover:bg-white/10 transition-colors text-left cursor-pointer"
                   >
                     <span className="font-mono text-sm text-white/80 truncate">
                       {post.content?.slice(0, 60) ?? "Post"}
@@ -139,7 +179,7 @@ export default function DashboardPage() {
                         "No Date"
                       )}
                     </span>
-                  </div>
+                  </button>
                 ))
               ) : (
                 <Link
@@ -150,7 +190,7 @@ export default function DashboardPage() {
                     No scheduled posts
                   </span>
                   <span className="font-mono text-[10px] tracking-widest text-white/40">
-                    Schedule one →
+                    Schedule first post →
                   </span>
                 </Link>
               )}
@@ -159,48 +199,245 @@ export default function DashboardPage() {
         </motion.div>
       </section>
 
-      {/* Section 4: Data - Brutalist Numbers (Mask Reveal cascade) */}
+      {/* Section 4: Live Stats - Activity, Queue summary, Recent, Chart */}
       <section className="py-32 px-6 md:px-12 space-y-16">
-        {MOCK_ANALYTICS.map((stat, i) => (
+        {/* Card A: Activity - Posts Published & Scheduled */}
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={{
+            hidden: {},
+            visible: {
+              transition: { staggerChildren: 0.05, delayChildren: 0 },
+            },
+          }}
+          className="w-full border-t border-b border-amber-500/20 py-12 flex flex-col md:flex-row md:items-end md:justify-between gap-4"
+        >
           <motion.div
-            key={stat.label}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-100px" }}
-            variants={{
-              hidden: {},
-              visible: {
-                transition: { staggerChildren: 0.05, delayChildren: i * 0.08 },
-              },
-            }}
-            className="w-full border-t border-b border-amber-500/20 py-12 flex flex-col md:flex-row md:items-end md:justify-between gap-4"
+            variants={{ hidden: { y: "100%" }, visible: { y: 0 } }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden font-mono text-[10px] tracking-[0.4em] text-amber-500/60 uppercase"
           >
+            Activity
+          </motion.div>
+          <div className="flex flex-col gap-2">
             <motion.div
               variants={{ hidden: { y: "100%" }, visible: { y: 0 } }}
               transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-              className="overflow-hidden font-mono text-[10px] tracking-[0.4em] text-amber-500/60 uppercase"
+              className="overflow-hidden flex flex-wrap items-baseline gap-x-6 gap-y-2"
             >
-              {stat.label}
+              {loading ? (
+                <span className="text-6xl md:text-8xl font-bold text-amber-500 font-serif">—</span>
+              ) : (
+                <>
+                  <span className="text-6xl md:text-8xl lg:text-9xl font-bold text-amber-500 tracking-tighter font-serif">
+                    {stats?.publishedCount ?? 0}
+                  </span>
+                  <span className="text-2xl md:text-4xl text-amber-500/80 font-serif">
+                    Posts Published
+                  </span>
+                  <span className="text-6xl md:text-8xl lg:text-9xl font-bold text-amber-500/70 tracking-tighter font-serif">
+                    {stats?.scheduledCount ?? 0}
+                  </span>
+                  <span className="text-2xl md:text-4xl text-amber-500/60 font-serif">
+                    Scheduled
+                  </span>
+                </>
+              )}
             </motion.div>
-            <div className="flex flex-col gap-2">
-              <motion.div
-                variants={{ hidden: { y: "100%" }, visible: { y: 0 } }}
-                transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                className="overflow-hidden text-6xl md:text-8xl lg:text-9xl font-bold text-amber-500 tracking-tighter font-serif"
-              >
-                {stat.value}
-              </motion.div>
-              <motion.div
-                variants={{ hidden: { y: "100%" }, visible: { y: 0 } }}
-                transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                className="overflow-hidden font-mono text-xs text-amber-500/50"
-              >
-                {stat.sub}
-              </motion.div>
-            </div>
+            <motion.div
+              variants={{ hidden: { y: "100%" }, visible: { y: 0 } }}
+              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden font-mono text-xs text-amber-500/50 flex items-center gap-4"
+            >
+              {!loading && (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <Send className="h-3.5 w-3.5" />
+                    {stats?.publishedCount ?? 0} posts published
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5" />
+                    {stats?.scheduledCount ?? 0} in queue
+                  </span>
+                  {typeof stats?.generationsToday === "number" && (
+                    <span>{stats.generationsToday} generated today</span>
+                  )}
+                </>
+              )}
+            </motion.div>
+          </div>
+        </motion.div>
+
+        {/* Card C: Recent Topics */}
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={{
+            hidden: {},
+            visible: {
+              transition: { staggerChildren: 0.05, delayChildren: 0.08 },
+            },
+          }}
+          className="w-full border-t border-b border-amber-500/20 py-12"
+        >
+          <motion.div
+            variants={{ hidden: { y: "100%" }, visible: { y: 0 } }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="font-mono text-[10px] tracking-[0.4em] text-amber-500/60 uppercase mb-6"
+          >
+            Recent Topics
           </motion.div>
-        ))}
+          {loading ? (
+            <div className="flex items-center gap-4 text-white/50">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="font-mono text-sm">Loading…</span>
+            </div>
+          ) : (stats?.recentTopics?.length ?? 0) > 0 ? (
+            <ul className="space-y-4">
+              {stats!.recentTopics.map((topic) => (
+                <motion.li
+                  key={topic.id}
+                  variants={{ hidden: { y: "100%" }, visible: { y: 0 } }}
+                  transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditorPostId(topic.id);
+                      setEditorOpen(true);
+                    }}
+                    className="w-full flex items-start gap-3 font-mono text-sm text-white/80 text-left hover:text-white transition-colors"
+                  >
+                    <FileText className="h-4 w-4 text-amber-500/60 flex-shrink-0 mt-0.5" />
+                    <span className="line-clamp-2 flex-1">
+                      {topic.content?.slice(0, 120) ?? "Untitled"}
+                      {(topic.content?.length ?? 0) > 120 ? "…" : ""}
+                    </span>
+                  <span className="text-[10px] text-white/40 flex-shrink-0">
+                    {topic.created_at
+                      ? format(new Date(topic.created_at), "MMM d")
+                      : ""}
+                  </span>
+                  </button>
+                </motion.li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-mono text-sm text-white/50">
+              No posts yet. Generate your first post to see topics here.
+            </p>
+          )}
+        </motion.div>
+
+        {/* Activity Chart - Posts per Day (Last 7 Days) */}
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={{
+            hidden: { opacity: 0, y: 20 },
+            visible: {
+              opacity: 1,
+              y: 0,
+              transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] },
+            },
+          }}
+          className="w-full border border-amber-500/20 p-6 md:p-8"
+        >
+          <h3 className="font-mono text-[10px] tracking-[0.4em] text-amber-500/60 uppercase mb-6">
+            Posts per Day (Last 7 Days)
+          </h3>
+          <div className="h-48 md:h-64">
+            {loading ? (
+              <div className="h-full flex items-center justify-center text-white/50">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={stats?.postsPerDay ?? []}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="rgba(245, 158, 11, 0.15)"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="label"
+                    stroke="rgba(255,255,255,0.5)"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    stroke="rgba(255,255,255,0.5)"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    allowDecimals={false}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "rgba(0,0,0,0.9)",
+                      border: "1px solid rgba(245, 158, 11, 0.3)",
+                      borderRadius: "8px",
+                    }}
+                    labelStyle={{ color: "rgba(255,255,255,0.8)" }}
+                    labelFormatter={(_, payload) =>
+                      payload?.[0]?.payload?.label ?? ""
+                    }
+                    formatter={(value: number) => [
+                      `${value} post${value !== 1 ? "s" : ""}`,
+                      "Posts",
+                    ]}
+                  />
+                  <Bar
+                    dataKey="count"
+                    fill="rgba(245, 158, 11, 0.6)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Test Dispatcher (admin only when ADMIN_USER_IDS is set) */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          className="flex justify-end"
+        >
+          <button
+            onClick={handleTestDispatch}
+            disabled={dispatching}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-500/30 text-amber-500/80 text-xs font-mono hover:bg-amber-500/10 disabled:opacity-50 transition-colors"
+            title="Run Dispatcher (process due scheduled posts)"
+          >
+            {dispatching ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
+            Test Dispatcher
+          </button>
+        </motion.div>
       </section>
+
+      <PostEditorPanel
+        postId={editorPostId}
+        open={editorOpen}
+        onClose={() => {
+          setEditorOpen(false);
+          setEditorPostId(null);
+        }}
+        onSaved={refreshStats}
+      />
     </div>
   );
 }

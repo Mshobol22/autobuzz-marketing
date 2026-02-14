@@ -5,6 +5,7 @@ import { google } from "@ai-sdk/google";
 import { groq } from "@ai-sdk/groq";
 import { auth } from "@clerk/nextjs/server";
 import { getBrandSettingsForUser } from "@/app/actions/brandSettings";
+import { getKnowledgeAssetsForPrompt } from "@/app/actions/knowledgeAssets";
 import type { GeneratePostResult } from "@/lib/types";
 
 const MAX_RETRIES = 3;
@@ -44,12 +45,18 @@ function buildPrompt(
   companyName: string,
   tone: string,
   audience: string,
+  knowledgeFacts: string[],
   vibeOverride?: string
 ): string {
   const vibeLine = vibeOverride?.trim()
     ? `\nVibe override: ${vibeOverride.trim()}`
     : "";
-  return `You are the social media manager for ${companyName}. Target Audience: ${audience}. Tone: ${tone}.${vibeLine}
+  const knowledgeBlock =
+    knowledgeFacts.length > 0
+      ? `\n\nHere are the known facts about the company (strictly adhere to these; do not hallucinate prices or policies):\n${knowledgeFacts.map((c) => `---\n${c}`).join("\n")}\n---\n`
+      : "";
+
+  return `You are the social media manager for ${companyName}. Target Audience: ${audience}. Tone: ${tone}.${vibeLine}${knowledgeBlock}
 
 Write a ${platform} post about: ${topic}.
 
@@ -92,12 +99,15 @@ export async function generatePost(
       };
     }
 
+    const knowledgeFacts = await getKnowledgeAssetsForPrompt();
+
     const prompt = buildPrompt(
       topic,
       platform,
       companyName,
       tone,
       audience,
+      knowledgeFacts,
       vibeOverride
     );
 
