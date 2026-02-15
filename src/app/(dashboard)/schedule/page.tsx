@@ -3,7 +3,7 @@
 import { DayPicker } from "react-day-picker";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
-import { CalendarIcon, Clock, Loader2, List, FileText } from "lucide-react";
+import { CalendarIcon, CalendarDays, Clock, Loader2, List, FileText } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { toast } from "sonner";
 import { getDraftPosts } from "@/app/actions/getPosts";
@@ -12,6 +12,7 @@ import type { Post } from "@/lib/types";
 import { scheduleDraftPost } from "@/app/actions/schedulePost";
 import { PostEditorPanel } from "@/components/PostEditorPanel";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { ScheduleCalendar } from "@/components/calendar/ScheduleCalendar";
 import { parseScheduledDate } from "@/lib/dateUtils";
 import "react-day-picker/style.css";
 
@@ -29,6 +30,8 @@ function ScheduleContent() {
   >([]);
   const [editorPostId, setEditorPostId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"calendar" | "list">("calendar");
+  const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
 
   useEffect(() => {
     setMounted(true);
@@ -148,6 +151,16 @@ function ScheduleContent() {
 
   const safePosts = Array.isArray(posts) ? posts : [];
 
+  async function refreshAll() {
+    const [queue, drafts] = await Promise.all([
+      getUpcomingScheduledPosts(20),
+      getDraftPosts(),
+    ]);
+    setQueuedPosts(Array.isArray(queue) ? queue : []);
+    setPosts(Array.isArray(drafts) ? drafts : []);
+    setCalendarRefreshKey((k) => k + 1);
+  }
+
   return (
     <div className="p-6 lg:p-8 max-w-5xl mx-auto">
       <motion.h1
@@ -161,18 +174,63 @@ function ScheduleContent() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.1 }}
-        className="mt-1 text-zinc-400 mb-8"
+        className="mt-1 text-zinc-400 mb-6"
       >
         Schedule posts for later publishing.
       </motion.p>
 
-      {/* Calendar - Center Stage */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="art-card p-6 mb-8"
-      >
+      {/* View Toggle */}
+      <div className="flex gap-2 mb-6">
+        <button
+          onClick={() => setViewMode("calendar")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+            viewMode === "calendar"
+              ? "bg-amber-500/20 border border-amber-500/40 text-amber-400"
+              : "bg-white/5 border border-white/10 text-white/60 hover:text-white/80"
+          }`}
+        >
+          <CalendarDays className="h-4 w-4" />
+          Calendar View
+        </button>
+        <button
+          onClick={() => setViewMode("list")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+            viewMode === "list"
+              ? "bg-amber-500/20 border border-amber-500/40 text-amber-400"
+              : "bg-white/5 border border-white/10 text-white/60 hover:text-white/80"
+          }`}
+        >
+          <List className="h-4 w-4" />
+          List View
+        </button>
+      </div>
+
+      {viewMode === "calendar" ? (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-6 mb-8"
+        >
+          <ScheduleCalendar
+            onRefresh={refreshAll}
+            refreshTrigger={calendarRefreshKey}
+            onPostClick={(id) => {
+              setEditorPostId(id);
+              setEditorOpen(true);
+            }}
+          />
+          <p className="mt-4 text-xs text-zinc-500">
+            Drag posts between days to reschedule. Switch to List View to schedule new posts.
+          </p>
+        </motion.div>
+      ) : (
+        <>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-6 mb-8"
+          >
         <h2 className="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
           <CalendarIcon className="h-5 w-5 text-zinc-400" />
           Pick date & time
@@ -276,15 +334,15 @@ function ScheduleContent() {
             </div>
           </div>
         </div>
-      </motion.div>
+          </motion.div>
 
-      {/* List View - Queued Posts */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="art-card p-6"
-      >
+          {/* Queued Posts - List View */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-6"
+          >
         <h2 className="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
           <List className="h-5 w-5 text-zinc-400" />
           Queued Posts
@@ -325,7 +383,9 @@ function ScheduleContent() {
             ))
           )}
         </ul>
-      </motion.div>
+          </motion.div>
+        </>
+      )}
 
       <PostEditorPanel
         postId={editorPostId}
@@ -334,14 +394,8 @@ function ScheduleContent() {
           setEditorOpen(false);
           setEditorPostId(null);
         }}
-        onSaved={async () => {
-          const [queue, drafts] = await Promise.all([
-            getUpcomingScheduledPosts(20),
-            getDraftPosts(),
-          ]);
-          setQueuedPosts(Array.isArray(queue) ? queue : []);
-          setPosts(Array.isArray(drafts) ? drafts : []);
-        }}
+        onOpenPost={(id) => setEditorPostId(id)}
+        onSaved={refreshAll}
       />
     </div>
   );

@@ -14,6 +14,10 @@ import {
   Trash2,
   Copy,
   Calendar,
+  FileText,
+  Eye,
+  Wand2,
+  ChevronDown,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -23,8 +27,11 @@ import { getPostById } from "@/app/actions/getPostById";
 import { updatePost } from "@/app/actions/updatePost";
 import { deletePost } from "@/app/actions/deletePost";
 import { duplicatePost } from "@/app/actions/duplicatePost";
+import { remixPost } from "@/app/actions/remixPost";
 import { generateImage } from "@/app/actions/generateImage";
 import { parseScheduledDate } from "@/lib/dateUtils";
+import { LinkedInPreview } from "@/components/previews/LinkedInPreview";
+import { InstagramPreview } from "@/components/previews/InstagramPreview";
 import "react-day-picker/style.css";
 
 export type PostEditorPanelProps = {
@@ -32,6 +39,7 @@ export type PostEditorPanelProps = {
   open: boolean;
   onClose: () => void;
   onSaved?: () => void;
+  onOpenPost?: (postId: string) => void;
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -46,12 +54,15 @@ export function PostEditorPanel({
   open,
   onClose,
   onSaved,
+  onOpenPost,
 }: PostEditorPanelProps) {
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [remixing, setRemixing] = useState(false);
+  const [remixOpen, setRemixOpen] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [content, setContent] = useState("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -59,6 +70,8 @@ export function PostEditorPanel({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [pasteUrl, setPasteUrl] = useState("");
+  const [editorTab, setEditorTab] = useState<"write" | "preview">("write");
+  const [previewPlatform, setPreviewPlatform] = useState<"LinkedIn" | "Instagram">("LinkedIn");
   const datePickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -167,6 +180,37 @@ export function PostEditorPanel({
     }
   }
 
+  const REMIX_OPTIONS = [
+    { value: "Instagram", label: "Remix for Instagram" },
+    { value: "LinkedIn", label: "Remix for LinkedIn" },
+    { value: "Twitter", label: "Remix for Twitter" },
+    { value: "facebook", label: "Remix for Facebook" },
+  ].filter((o) => (post?.platform ?? "").toLowerCase() !== o.value.toLowerCase());
+
+  async function handleRemix(targetPlatform: string) {
+    if (!postId) return;
+    setRemixOpen(false);
+    toast.info("Remixing content...");
+    setRemixing(true);
+    try {
+      const result = await remixPost(postId, targetPlatform);
+      if (result.success) {
+        toast.success("Remixed! Opening new draft.");
+        onSaved?.();
+        onOpenPost?.(result.postId);
+      } else {
+        toast.error("Failed to remix", { description: result.error });
+      }
+    } catch (err) {
+      toast.error(
+        "Failed to remix",
+        { description: err instanceof Error ? err.message : "Unknown error" }
+      );
+    } finally {
+      setRemixing(false);
+    }
+  }
+
   async function handleRegenerateImage() {
     const prompt = content?.trim() || "social media post visual";
     setRegenerating(true);
@@ -232,6 +276,32 @@ export function PostEditorPanel({
               </button>
             </div>
 
+            {/* Write | Preview tabs */}
+            <div className="flex border-b border-white/10">
+              <button
+                onClick={() => setEditorTab("write")}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+                  editorTab === "write"
+                    ? "text-amber-500 border-b-2 border-amber-500 bg-amber-500/5"
+                    : "text-white/60 hover:text-white/80"
+                }`}
+              >
+                <FileText className="h-4 w-4" />
+                Write
+              </button>
+              <button
+                onClick={() => setEditorTab("preview")}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+                  editorTab === "preview"
+                    ? "text-amber-500 border-b-2 border-amber-500 bg-amber-500/5"
+                    : "text-white/60 hover:text-white/80"
+                }`}
+              >
+                <Eye className="h-4 w-4" />
+                Preview
+              </button>
+            </div>
+
             <div className="flex-1 overflow-y-auto p-4 space-y-6">
               {loading ? (
                 <div className="flex items-center justify-center py-16">
@@ -239,6 +309,39 @@ export function PostEditorPanel({
                 </div>
               ) : !post ? (
                 <p className="text-sm text-white/50 py-8">Post not found.</p>
+              ) : editorTab === "preview" ? (
+                <>
+                  {/* Platform selector */}
+                  <div>
+                    <label className="block text-xs font-mono text-amber-500/60 uppercase tracking-wider mb-2">
+                      Platform
+                    </label>
+                    <select
+                      value={previewPlatform}
+                      onChange={(e) =>
+                        setPreviewPlatform(e.target.value as "LinkedIn" | "Instagram")
+                      }
+                      className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                    >
+                      <option value="LinkedIn">LinkedIn</option>
+                      <option value="Instagram">Instagram</option>
+                    </select>
+                  </div>
+                  {/* Preview card */}
+                  <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-4 overflow-x-auto">
+                    {previewPlatform === "LinkedIn" ? (
+                      <LinkedInPreview
+                        content={content}
+                        imageUrl={imageUrl}
+                      />
+                    ) : (
+                      <InstagramPreview
+                        content={content}
+                        imageUrl={imageUrl}
+                      />
+                    )}
+                  </div>
+                </>
               ) : (
                 <>
                   {/* Status Badge */}
@@ -426,11 +529,11 @@ export function PostEditorPanel({
                   {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                   Save
                 </button>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <button
                     onClick={handleDuplicate}
                     disabled={duplicating}
-                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 text-sm hover:bg-white/10 disabled:opacity-50 transition-colors"
+                    className="flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 text-sm hover:bg-white/10 disabled:opacity-50 transition-colors"
                   >
                     {duplicating ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -439,6 +542,41 @@ export function PostEditorPanel({
                     )}
                     Duplicate
                   </button>
+                  <div className="relative flex-1 min-w-0">
+                    <button
+                      onClick={() => setRemixOpen((v) => !v)}
+                      disabled={remixing || REMIX_OPTIONS.length === 0}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm hover:bg-amber-500/20 disabled:opacity-50 transition-colors"
+                    >
+                      {remixing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Wand2 className="h-4 w-4" />
+                      )}
+                      Remix
+                      <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                    </button>
+                    {remixOpen && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setRemixOpen(false)}
+                          aria-hidden
+                        />
+                        <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border border-white/10 bg-zinc-900/95 backdrop-blur-xl py-1 shadow-xl">
+                          {REMIX_OPTIONS.map((opt) => (
+                            <button
+                              key={opt.value}
+                              onClick={() => handleRemix(opt.value)}
+                              className="w-full px-3 py-2 text-left text-sm text-white/90 hover:bg-white/10 transition-colors"
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
                   <button
                     onClick={handleDelete}
                     disabled={deleting}

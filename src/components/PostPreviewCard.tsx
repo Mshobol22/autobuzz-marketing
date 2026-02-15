@@ -125,14 +125,18 @@ function AutoResizeTextarea({
   );
 }
 
-export function PostPreviewCard() {
+export type PostPreviewCardProps = {
+  initialImage?: string | null;
+};
+
+export function PostPreviewCard({ initialImage }: PostPreviewCardProps = {}) {
   const router = useRouter();
   const [topic, setTopic] = useState("");
   const [platform, setPlatform] = useState<Platform>("Twitter");
   const [vibeOverride, setVibeOverride] = useState("");
   const [previewPlatform, setPreviewPlatform] = useState<Platform>("Twitter");
   const [draftContent, setDraftContent] = useState("");
-  const [draftImage, setDraftImage] = useState<string | null>(null);
+  const [draftImage, setDraftImage] = useState<string | null>(initialImage ?? null);
   const [imageLoadError, setImageLoadError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [imageGenerating, setImageGenerating] = useState(false);
@@ -145,6 +149,10 @@ export function PostPreviewCard() {
   const schedulePopoverRef = useRef<HTMLDivElement>(null);
   const [postId, setPostId] = useState<string | null>(null);
   const [suggestedImagePrompt, setSuggestedImagePrompt] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialImage) setDraftImage(initialImage);
+  }, [initialImage]);
 
   useEffect(() => {
     if (!schedulePopoverOpen) return;

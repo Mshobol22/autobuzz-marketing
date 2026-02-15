@@ -6,42 +6,83 @@ import type { GenerateImageResult } from "@/lib/types";
 
 const POLLINATIONS_BASE = "https://image.pollinations.ai/prompt";
 const FETCH_TIMEOUT_MS = 90_000; // Pollinations can be slow (30–60s for FLUX)
+const POLLINATIONS_RETRY_ATTEMPTS = 3;
+const POLLINATIONS_RETRY_DELAY_MS = 5_000;
 
-/** Fetch image from Pollinations (free, no API key). Uses turbo model for speed. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetch image from Pollinations (free, no API key).
+ * Tries simplest URL first (fewer params = fewer 5xx per Pollinations issues).
+ * Retries on 5xx errors (530, 502) which are often transient.
+ */
 async function fetchFromPollinations(prompt: string): Promise<string> {
   const encodedPrompt = encodeURIComponent(prompt.trim());
   const seed = Math.floor(Math.random() * 1_000_000);
-  const url = `${POLLINATIONS_BASE}/${encodedPrompt}?width=1080&height=1080&seed=${seed}&model=turbo&nologo=true`;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  // Try simpler URL first (complex params can trigger 502/530 per Pollinations GitHub issues)
+  const urlsToTry = [
+    `${POLLINATIONS_BASE}/${encodedPrompt}`, // Minimal - prompt only
+    `${POLLINATIONS_BASE}/${encodedPrompt}?width=1024&height=1024&seed=${seed}&model=flux`,
+  ];
 
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { Accept: "image/*" },
-    });
-    clearTimeout(timeout);
+  let lastError: Error | null = null;
 
-    if (!res.ok) {
-      throw new Error(`Pollinations returned ${res.status}: ${res.statusText}`);
-    }
-    const contentType = res.headers.get("content-type") || "";
-    if (!contentType.startsWith("image/")) {
-      const text = await res.text();
-      throw new Error(`Pollinations did not return an image: ${text.slice(0, 200)}`);
-    }
-    return url;
-  } catch (err) {
-    clearTimeout(timeout);
-    if (err instanceof Error) {
-      if (err.name === "AbortError") {
-        throw new Error("Image generation timed out (90s). Pollinations may be overloaded.");
+  for (const url of urlsToTry) {
+    for (let attempt = 1; attempt <= POLLINATIONS_RETRY_ATTEMPTS; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+      try {
+        const res = await fetch(url, {
+          signal: controller.signal,
+          headers: { Accept: "image/*" },
+        });
+        clearTimeout(timeout);
+
+        if (res.ok) {
+          const contentType = res.headers.get("content-type") || "";
+          if (contentType.startsWith("image/")) {
+            return url;
+          }
+          const text = await res.text();
+          lastError = new Error(`Pollinations did not return an image: ${text.slice(0, 150)}`);
+        } else {
+          const statusText = res.statusText || "Unknown";
+          lastError = new Error(`Pollinations returned ${res.status}: ${statusText}`);
+          if (res.status >= 500 && attempt < POLLINATIONS_RETRY_ATTEMPTS) {
+            await sleep(POLLINATIONS_RETRY_DELAY_MS);
+            continue;
+          }
+        }
+      } catch (err) {
+        clearTimeout(timeout);
+        if (err instanceof Error) {
+          if (err.name === "AbortError") {
+            lastError = new Error("Image generation timed out (90s). Pollinations may be overloaded.");
+          } else {
+            lastError = err;
+          }
+        } else {
+          lastError = new Error("Pollinations request failed");
+        }
+        if (attempt < POLLINATIONS_RETRY_ATTEMPTS) {
+          await sleep(POLLINATIONS_RETRY_DELAY_MS);
+          continue;
+        }
       }
-      throw err;
+      break; // Try next URL variant
     }
-    throw new Error("Pollinations request failed");
   }
+
+  const msg = lastError?.message ?? "Image generation failed";
+  throw new Error(
+    msg.includes("530") || msg.includes("502")
+      ? `${msg} Pollinations may be temporarily overloaded. Try again in a minute, or add FAL_KEY for a more reliable fallback.`
+      : msg
+  );
 }
 
 /** Generate via fal.ai FLUX schnell (fast, free credits on signup). */

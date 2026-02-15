@@ -9,6 +9,7 @@ import { Magnetic } from "@/components/ui/Magnetic";
 const NAV_LINKS: Array<{ href: string; label: string; icon?: React.ComponentType<{ className?: string }> }> = [
   { href: "/", label: "DASHBOARD" },
   { href: "/generator", label: "GENERATOR" },
+  { href: "/gallery", label: "GALLERY" },
   { href: "/vault", label: "VAULT" },
   { href: "/schedule", label: "SCHEDULE" },
   { href: "/analytics", label: "ANALYTICS" },

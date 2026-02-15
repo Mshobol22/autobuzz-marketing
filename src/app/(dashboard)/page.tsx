@@ -436,6 +436,7 @@ export default function DashboardPage() {
           setEditorOpen(false);
           setEditorPostId(null);
         }}
+        onOpenPost={(id) => setEditorPostId(id)}
         onSaved={refreshStats}
       />
     </div>

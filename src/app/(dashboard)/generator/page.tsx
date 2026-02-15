@@ -1,12 +1,15 @@
 "use client";
 
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
-import { Brain } from "lucide-react";
+import { Brain, Loader2 } from "lucide-react";
 import { PostPreviewCard } from "@/components/PostPreviewCard";
 import { getKnowledgeAssetsCount } from "@/app/actions/knowledgeAssets";
 
-export default function GeneratorPage() {
+function GeneratorContent() {
+  const searchParams = useSearchParams();
+  const imageUrlFromGallery = searchParams.get("imageUrl");
   const [assetCount, setAssetCount] = useState<number | null>(null);
 
   useEffect(() => {
@@ -45,7 +48,21 @@ export default function GeneratorPage() {
           </motion.div>
         )}
       </div>
-      <PostPreviewCard />
+      <PostPreviewCard initialImage={imageUrlFromGallery || undefined} />
     </div>
+  );
+}
+
+export default function GeneratorPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 lg:p-8 flex items-center justify-center min-h-[50vh]">
+          <Loader2 className="h-10 w-10 animate-spin text-amber-500/60" />
+        </div>
+      }
+    >
+      <GeneratorContent />
+    </Suspense>
   );
 }
