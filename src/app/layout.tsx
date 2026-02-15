@@ -3,8 +3,10 @@ import { Space_Mono, Playfair_Display } from "next/font/google";
 import { Toaster } from "sonner";
 import { ClerkProviderWrapper } from "@/components/providers/ClerkProvider";
 import { LenisProvider } from "@/components/providers/LenisProvider";
-import { Background } from "@/components/ui/Background";
+import { BackgroundController } from "@/components/ui/BackgroundController";
 import { CornerNav } from "@/components/ui/CornerNav";
+import { MobileBottomNav } from "@/components/ui/MobileBottomNav";
+import { NavProvider } from "@/components/providers/NavContext";
 import { CursorEffects } from "@/components/ui/CursorEffects";
 import "./globals.css";
 
@@ -33,12 +35,15 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${spaceMono.variable} ${playfair.variable} antialiased font-mono`}>
-        <Background />
+        <BackgroundController />
         <CursorEffects />
         <ClerkProviderWrapper>
           <LenisProvider>
-            <CornerNav />
-            {children}
+            <NavProvider>
+              <CornerNav />
+              <MobileBottomNav />
+              <div className="pb-14 md:pb-0">{children}</div>
+            </NavProvider>
             <Toaster
               theme="dark"
               position="bottom-right"

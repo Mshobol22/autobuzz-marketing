@@ -17,6 +17,11 @@ export type GetAyrshareTokenResult =
   | { success: true; url: string; token?: string }
   | { success: false; error: string };
 
+/** True when AYRSHARE_DOMAIN is missing (Free Plan = Single Player Mode). */
+export async function isSinglePlayerMode(): Promise<boolean> {
+  return !process.env.AYRSHARE_DOMAIN?.trim();
+}
+
 /**
  * Fetches a JWT URL for the Ayrshare Social Linking page.
  * Creates an Ayrshare User Profile for the user if they don't have one.

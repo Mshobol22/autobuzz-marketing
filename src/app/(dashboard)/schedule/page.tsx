@@ -3,6 +3,8 @@
 import { DayPicker } from "react-day-picker";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { CalendarIcon, CalendarDays, Clock, Loader2, List, FileText } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { toast } from "sonner";
@@ -17,6 +19,7 @@ import { parseScheduledDate } from "@/lib/dateUtils";
 import "react-day-picker/style.css";
 
 function ScheduleContent() {
+  const searchParams = useSearchParams();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +39,15 @@ function ScheduleContent() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Open editor when ?open=postId is in URL (e.g. from Analytics Remix)
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (openId) {
+      setEditorPostId(openId);
+      setEditorOpen(true);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -237,7 +249,7 @@ function ScheduleContent() {
         </h2>
 
         <div className="flex flex-col lg:flex-row gap-8">
-          <div className="rounded-xl overflow-hidden [&_.rdp]:m-0">
+          <div className="rounded-xl overflow-x-auto [&_.rdp]:m-0 min-w-0">
             {mounted ? (
               <DayPicker
                 mode="single"
@@ -404,7 +416,13 @@ function ScheduleContent() {
 export default function SchedulePage() {
   return (
     <ErrorBoundary>
-      <ScheduleContent />
+      <Suspense fallback={
+        <div className="p-8 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+        </div>
+      }>
+        <ScheduleContent />
+      </Suspense>
     </ErrorBoundary>
   );
 }

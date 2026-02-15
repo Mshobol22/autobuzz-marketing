@@ -28,10 +28,23 @@ function normalizePlatformForPrompt(p: string | null): string {
   return p ?? "Unknown";
 }
 
+export type RemixPostOptions = {
+  isHallOfFame?: boolean;
+  sourceContent?: string;
+  sourcePlatform?: string;
+};
+
 function buildRemixSystemPrompt(
   sourcePlatform: string,
-  targetPlatform: string
+  targetPlatform: string,
+  isHallOfFame?: boolean
 ): string {
+  if (isHallOfFame) {
+    return `You are a social media expert. This content was a high-performing hit. Deconstruct WHY it worked (hook, tone, structure) and generate 3 NEW variations on the same topic that keep the core psychological trigger but change the angle.
+
+Output format: Provide exactly 3 variations, each separated by a line containing only "---". Each variation should be a complete, ready-to-post ${targetPlatform} post. No JSON, no numbering, no explanation—just the 3 post texts.`;
+  }
+
   const base = `You are a social media expert. Rewrite the following ${sourcePlatform} post for ${targetPlatform}.`;
 
   const target = targetPlatform.toLowerCase();
@@ -60,7 +73,8 @@ If Target is Facebook: Use a conversational, engaging tone suitable for a broad 
 
 export async function remixPost(
   originalPostId: string,
-  targetPlatform: string
+  targetPlatform: string,
+  options?: RemixPostOptions
 ): Promise<RemixPostResult> {
   const { userId } = await auth();
   if (!userId) {
@@ -76,20 +90,45 @@ export async function remixPost(
     };
   }
 
-  // Step A: Fetch original post
-  const original = await getPostById(originalPostId);
-  if (!original?.content?.trim()) {
-    return { success: false, error: "Post not found or has no content" };
+  const isHallOfFame = options?.isHallOfFame ?? false;
+  const sourceContentOverride = options?.sourceContent?.trim();
+  const sourcePlatformOverride = options?.sourcePlatform;
+
+  // Step A: Get source content (fetch or use override)
+  let sourceContent: string;
+  let sourcePlatform: string;
+  let imageUrl: string | null = null;
+  let baseDate = new Date();
+
+  if (sourceContentOverride) {
+    sourceContent = sourceContentOverride;
+    sourcePlatform = normalizePlatformForPrompt(sourcePlatformOverride ?? null);
+  } else {
+    const original = await getPostById(originalPostId);
+    if (!original?.content?.trim()) {
+      return { success: false, error: "Post not found or has no content" };
+    }
+    sourceContent = original.content.trim();
+    sourcePlatform = normalizePlatformForPrompt(original.platform);
+    imageUrl = original.image_url;
+    if (original.scheduled_for || original.created_at) {
+      baseDate = new Date(original.scheduled_for ?? original.created_at!);
+    }
   }
 
-  const sourcePlatform = normalizePlatformForPrompt(original.platform);
   const targetNorm = normalizePlatformForPrompt(targetPlatform);
 
   // Step B: AI Rewrite
-  const systemPrompt = buildRemixSystemPrompt(sourcePlatform, targetNorm);
-  const userPrompt = `Original ${sourcePlatform} post:\n\n${original.content.trim()}\n\nRewrite for ${targetNorm}. Output ONLY the rewritten post text, no JSON, no explanation.`;
+  const systemPrompt = buildRemixSystemPrompt(
+    sourcePlatform,
+    targetNorm,
+    isHallOfFame
+  );
+  const userPrompt = isHallOfFame
+    ? `High-performing ${sourcePlatform} post:\n\n${sourceContent}\n\nGenerate 3 variations.`
+    : `Original ${sourcePlatform} post:\n\n${sourceContent}\n\nRewrite for ${targetNorm}. Output ONLY the rewritten post text, no JSON, no explanation.`;
 
-  let rewrittenContent: string;
+  let rawOutput: string;
   try {
     const useGroq = !!groqKey;
     const result = useGroq
@@ -103,59 +142,64 @@ export async function remixPost(
           system: systemPrompt,
           prompt: userPrompt,
         });
-    rewrittenContent = result.text?.trim() ?? "";
+    rawOutput = result.text?.trim() ?? "";
   } catch (err) {
     const msg = err instanceof Error ? err.message : "AI rewrite failed";
     return { success: false, error: msg };
   }
 
-  if (!rewrittenContent) {
+  const variations = isHallOfFame
+    ? rawOutput.split(/\n---\n/).map((s) => s.trim()).filter(Boolean)
+    : [rawOutput];
+
+  const firstContent = variations[0];
+  if (!firstContent) {
     return { success: false, error: "AI returned empty content" };
   }
 
-  // Step C: Image handling
-  let imageUrl: string | null = original.image_url;
-
+  // Step C: Image handling for first variation
   const targetLower = targetPlatform.toLowerCase();
   if (targetLower.includes("instagram")) {
-    const imgResult = await generateImage(rewrittenContent.slice(0, 500));
-    imageUrl = imgResult.success ? imgResult.imageUrl : original.image_url;
+    const imgResult = await generateImage(firstContent.slice(0, 500));
+    imageUrl = imgResult.success ? imgResult.imageUrl : imageUrl;
   }
 
-  // Step D: Save as new draft
+  // Step D: Save as new draft(s)
   const supabase = getSupabase();
   if (!supabase) {
     return { success: false, error: "Database not configured" };
   }
 
-  let scheduledFor: string | null = null;
-  const origDate = original.scheduled_for
-    ? new Date(original.scheduled_for)
-    : original.created_at
-      ? new Date(original.created_at)
-      : new Date();
-  const newDate = new Date(origDate.getTime() + 60 * 60 * 1000);
-  scheduledFor = newDate.toISOString();
+  let firstPostId: string | null = null;
+  for (let i = 0; i < variations.length; i++) {
+    const content = variations[i];
+    if (!content) continue;
 
-  const { data, error } = await supabase
-    .from("posts")
-    .insert({
-      user_id: userId,
-      content: rewrittenContent,
-      image_url: imageUrl,
-      platform: targetNorm,
-      status: "draft",
-      scheduled_for: scheduledFor,
-    })
-    .select("id")
-    .single();
+    const scheduledFor = new Date(baseDate.getTime() + (i + 1) * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from("posts")
+      .insert({
+        user_id: userId,
+        content,
+        image_url: i === 0 ? imageUrl : null,
+        platform: targetNorm,
+        status: "draft",
+        scheduled_for: scheduledFor,
+      })
+      .select("id")
+      .single();
 
-  if (error) {
+    if (!error && data) {
+      if (i === 0) firstPostId = data.id;
+    }
+  }
+
+  if (!firstPostId) {
     return {
       success: false,
-      error: error.message ?? "Failed to save remixed post",
+      error: "Failed to save remixed post",
     };
   }
 
-  return { success: true, postId: data.id };
+  return { success: true, postId: firstPostId };
 }

@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { generatePost } from "@/app/actions/generatePost";
 import { generateImage } from "@/app/actions/generateImage";
 import { postNow } from "@/app/actions/postNow";
+import { updatePost } from "@/app/actions/updatePost";
 import { schedulePost } from "@/app/actions/schedulePost";
 import { savePostDraft, savePostImage } from "@/app/actions/savePost";
 
@@ -296,6 +297,12 @@ export function PostPreviewCard({ initialImage }: PostPreviewCardProps = {}) {
       });
 
       if (result.success) {
+        if (postId && result.id) {
+          await updatePost(postId, {
+            ayrshare_post_id: result.id,
+            status: "published",
+          });
+        }
         toast.success("Posted!");
         router.push("/");
       } else {

@@ -26,9 +26,9 @@ function getSupabase() {
 async function publishToAyrshare(
   content: string,
   platform: string,
-  profileKey: string,
+  profileKey: string | null,
   imageUrl?: string | null
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; ayrsharePostId?: string; error?: string }> {
   const apiKey = process.env.AYRSHARE_API_KEY;
   if (!apiKey) {
     return { success: false, error: "AYRSHARE_API_KEY not configured" };
@@ -44,14 +44,18 @@ async function publishToAyrshare(
     body.mediaUrls = [imageUrl.trim()];
   }
 
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (profileKey) {
+    headers["Profile-Key"] = profileKey;
+  }
+
   try {
     const res = await fetch(AYRSHARE_API_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "Profile-Key": profileKey,
-      },
+      headers,
       body: JSON.stringify(body),
     });
 
@@ -64,7 +68,9 @@ async function publishToAyrshare(
     }
 
     if (data?.status === "success") {
-      return { success: true };
+      // CRITICAL: Capture Ayrshare Post ID for analytics. Root `id` is required
+      // for /analytics/post endpoint. Without this, Analytics will break.
+      return { success: true, ayrsharePostId: data.id };
     }
 
     const errors = data?.errors ?? [];
@@ -129,22 +135,7 @@ export async function dispatchScheduledPosts(): Promise<DispatchResult> {
     const profileKey = post.user_id
       ? await getAyrshareProfileKeyForUser(post.user_id)
       : null;
-    if (!profileKey) {
-      await supabase
-        .from("posts")
-        .update({
-          status: "failed",
-          error_message: "User has not connected social accounts",
-          updated_at: now,
-        })
-        .eq("id", post.id);
-      result.errors.push({
-        postId: post.id,
-        error: "User has not connected social accounts",
-      });
-      result.posts_processed++;
-      continue;
-    }
+    // Single Player Mode: no profileKey = use global AYRSHARE_API_KEY (main connected account)
 
     const publishResult = await publishToAyrshare(
       post.content,
@@ -160,6 +151,7 @@ export async function dispatchScheduledPosts(): Promise<DispatchResult> {
           status: "published",
           posted_at: now,
           error_message: null,
+          ayrshare_post_id: publishResult.ayrsharePostId ?? null,
           updated_at: now,
         })
         .eq("id", post.id);

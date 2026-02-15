@@ -37,12 +37,6 @@ export async function postNow({
   }
 
   const profileKey = await getAyrshareProfileKeyForUser(userId);
-  if (!profileKey) {
-    return {
-      success: false,
-      error: "Connect your social accounts first. Go to Settings → Integrations.",
-    };
-  }
 
   const ayrsharePlatforms = platforms.map(
     (p) => PLATFORM_MAP[p] ?? p.toLowerCase()
@@ -61,8 +55,10 @@ export async function postNow({
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
-      "Profile-Key": profileKey,
     };
+    if (profileKey) {
+      headers["Profile-Key"] = profileKey;
+    }
 
     const res = await fetch(AYRSHARE_API_URL, {
       method: "POST",

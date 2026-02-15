@@ -22,6 +22,8 @@ export async function updatePost(
     content?: string | null;
     image_url?: string | null;
     scheduled_for?: string | null;
+    ayrshare_post_id?: string | null;
+    status?: string | null;
   }
 ): Promise<UpdatePostResult> {
   const { userId } = await auth();
@@ -41,7 +43,6 @@ export async function updatePost(
     if (updates.content !== undefined) payload.content = updates.content;
     if (updates.image_url !== undefined) payload.image_url = updates.image_url;
     if (updates.scheduled_for !== undefined) {
-      // Normalize to UTC ISO string for strict storage (Supabase timestamptz)
       let utcIso: string | null = null;
       if (updates.scheduled_for && typeof updates.scheduled_for === "string") {
         const parsed = parseISO(updates.scheduled_for);
@@ -52,6 +53,8 @@ export async function updatePost(
       payload.scheduled_for = utcIso;
       payload.status = utcIso ? "scheduled" : "draft";
     }
+    if (updates.ayrshare_post_id !== undefined) payload.ayrshare_post_id = updates.ayrshare_post_id;
+    if (updates.status !== undefined) payload.status = updates.status;
 
     const { error } = await supabase
       .from("posts")

@@ -81,7 +81,7 @@ export default function GalleryPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.1 }}
-          className="columns-2 md:columns-3 gap-4 space-y-4"
+          className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4"
         >
           {images.map((img, i) => (
             <motion.div

@@ -2,28 +2,34 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { getAyrshareToken } from "@/app/actions/getAyrshareToken";
-import { Loader2, Link2, ExternalLink } from "lucide-react";
+import { getAyrshareToken, isSinglePlayerMode } from "@/app/actions/getAyrshareToken";
+import { Loader2, Link2, ExternalLink, User } from "lucide-react";
 import { toast } from "sonner";
 
 export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [linkUrl, setLinkUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [singlePlayer, setSinglePlayer] = useState<boolean | null>(null);
 
   useEffect(() => {
-    getAyrshareToken()
-      .then((result) => {
-        if (result.success) {
-          setLinkUrl(result.url);
-        } else {
-          setError(result.error);
-        }
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to load");
-      })
-      .finally(() => setLoading(false));
+    Promise.all([
+      isSinglePlayerMode(),
+      getAyrshareToken(),
+    ]).then(([isSingle, tokenResult]) => {
+      setSinglePlayer(isSingle);
+      if (isSingle) {
+        setError(null);
+        setLinkUrl(null);
+      } else if (tokenResult.success) {
+        setLinkUrl(tokenResult.url);
+        setError(null);
+      } else {
+        setError(tokenResult.error);
+      }
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : "Failed to load");
+    }).finally(() => setLoading(false));
   }, []);
 
   function openLinkPopup() {
@@ -72,6 +78,31 @@ export default function IntegrationsPage() {
             <div className="flex items-center gap-3 text-amber-500/90">
               <Loader2 className="h-5 w-5 animate-spin" />
               <span>Loading...</span>
+            </div>
+          ) : singlePlayer ? (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-amber-500/10 p-2">
+                  <User className="h-5 w-5 text-amber-500" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-white">
+                    Single Player Mode
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Please connect your social accounts directly on the Ayrshare Dashboard.
+                  </p>
+                  <a
+                    href="https://app.ayrshare.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex items-center gap-2 text-sm text-amber-500 hover:text-amber-400 transition-colors"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Open Ayrshare Dashboard
+                  </a>
+                </div>
+              </div>
             </div>
           ) : error ? (
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-red-400">

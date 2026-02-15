@@ -6,8 +6,8 @@ import type { GenerateImageResult } from "@/lib/types";
 
 const POLLINATIONS_BASE = "https://image.pollinations.ai/prompt";
 const FETCH_TIMEOUT_MS = 90_000; // Pollinations can be slow (30–60s for FLUX)
-const POLLINATIONS_RETRY_ATTEMPTS = 3;
-const POLLINATIONS_RETRY_DELAY_MS = 5_000;
+const POLLINATIONS_RETRY_ATTEMPTS = 2; // Fail faster so FAL fallback kicks in when Pollinations is down (503)
+const POLLINATIONS_RETRY_DELAY_MS = 3_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -107,32 +107,30 @@ export async function generateImage(prompt: string): Promise<GenerateImageResult
     return { success: false, error: "Prompt is required" };
   }
 
-  const falKey = process.env.FAL_KEY;
+  const falKey = process.env.FAL_KEY?.trim();
 
   let tempUrl: string;
 
-  if (falKey) {
-    try {
-      fal.config({ credentials: falKey });
-      tempUrl = await fetchFromFal(prompt);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "fal.ai failed";
-      console.warn("[generateImage] fal.ai failed:", msg);
+  // Try Pollinations first (free). When it fails (503, 502, timeout), fall back to fal if FAL_KEY exists.
+  try {
+    tempUrl = await fetchFromPollinations(prompt);
+  } catch (pollErr) {
+    const pollMsg = pollErr instanceof Error ? pollErr.message : "Pollinations failed";
+    if (falKey) {
+      console.warn("[generateImage] Pollinations failed, falling back to fal.ai:", pollMsg);
       try {
-        tempUrl = await fetchFromPollinations(prompt);
-      } catch (pollErr) {
-        const message =
-          pollErr instanceof Error ? pollErr.message : "Image generation failed";
-        return { success: false, error: message };
+        fal.config({ credentials: falKey });
+        tempUrl = await fetchFromFal(prompt);
+      } catch (falErr) {
+        const falMsg = falErr instanceof Error ? falErr.message : "fal.ai failed";
+        console.warn("[generateImage] fal.ai fallback also failed:", falMsg);
+        return {
+          success: false,
+          error: `Image generation failed. Pollinations: ${pollMsg}. fal.ai fallback: ${falMsg}`,
+        };
       }
-    }
-  } else {
-    try {
-      tempUrl = await fetchFromPollinations(prompt);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Image generation failed";
-      return { success: false, error: message };
+    } else {
+      return { success: false, error: pollMsg };
     }
   }
 

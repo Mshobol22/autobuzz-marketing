@@ -19,7 +19,8 @@ import {
   Wand2,
   ChevronDown,
 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { DayPicker } from "react-day-picker";
 import type { Post } from "@/lib/types";
@@ -41,6 +42,79 @@ export type PostEditorPanelProps = {
   onSaved?: () => void;
   onOpenPost?: (postId: string) => void;
 };
+
+function PlatformSelect<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: Array<{ value: T; label: string }>;
+  label: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [style, setStyle] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current || typeof document === "undefined") {
+      setStyle(null);
+      return;
+    }
+    const rect = buttonRef.current.getBoundingClientRect();
+    setStyle({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+  }, [open]);
+
+  return (
+    <div>
+      <label className="block text-xs font-mono text-amber-500/60 uppercase tracking-wider mb-2">
+        {label}
+      </label>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50 flex items-center justify-between"
+      >
+        {options.find((o) => o.value === value)?.label ?? value}
+        <ChevronDown className={`h-4 w-4 opacity-70 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open &&
+        typeof document !== "undefined" &&
+        style &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-[100]"
+              onClick={() => setOpen(false)}
+              aria-hidden
+            />
+            <div
+              className="fixed z-[101] rounded-lg border border-white/10 bg-zinc-900/95 backdrop-blur-xl py-1 shadow-xl"
+              style={{ top: style.top, left: style.left, width: style.width }}
+            >
+              {options.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-white/90 hover:bg-white/10 transition-colors"
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body
+        )}
+    </div>
+  );
+}
 
 const STATUS_STYLES: Record<string, string> = {
   draft: "bg-zinc-500/30 text-zinc-200 border-zinc-500/50",
@@ -73,6 +147,13 @@ export function PostEditorPanel({
   const [editorTab, setEditorTab] = useState<"write" | "preview">("write");
   const [previewPlatform, setPreviewPlatform] = useState<"LinkedIn" | "Instagram">("LinkedIn");
   const datePickerRef = useRef<HTMLDivElement>(null);
+  const remixButtonRef = useRef<HTMLButtonElement>(null);
+  const [remixDropdownStyle, setRemixDropdownStyle] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    openAbove: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (open && postId) {
@@ -108,6 +189,24 @@ export function PostEditorPanel({
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showDatePicker]);
+
+  // Position Remix dropdown via portal - open ABOVE button when near bottom (avoids off-screen)
+  useLayoutEffect(() => {
+    if (!remixOpen || !remixButtonRef.current || typeof document === "undefined") {
+      setRemixDropdownStyle(null);
+      return;
+    }
+    const rect = remixButtonRef.current.getBoundingClientRect();
+    const DROPDOWN_EST_HEIGHT = 180;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openAbove = spaceBelow < DROPDOWN_EST_HEIGHT;
+    setRemixDropdownStyle({
+      top: openAbove ? rect.top - DROPDOWN_EST_HEIGHT - 4 : rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      openAbove,
+    });
+  }, [remixOpen]);
 
   async function handleSave() {
     if (!postId) return;
@@ -302,7 +401,7 @@ export function PostEditorPanel({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 pb-32 space-y-6">
               {loading ? (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 className="h-8 w-8 animate-spin text-amber-500/60" />
@@ -311,22 +410,16 @@ export function PostEditorPanel({
                 <p className="text-sm text-white/50 py-8">Post not found.</p>
               ) : editorTab === "preview" ? (
                 <>
-                  {/* Platform selector */}
-                  <div>
-                    <label className="block text-xs font-mono text-amber-500/60 uppercase tracking-wider mb-2">
-                      Platform
-                    </label>
-                    <select
-                      value={previewPlatform}
-                      onChange={(e) =>
-                        setPreviewPlatform(e.target.value as "LinkedIn" | "Instagram")
-                      }
-                      className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
-                    >
-                      <option value="LinkedIn">LinkedIn</option>
-                      <option value="Instagram">Instagram</option>
-                    </select>
-                  </div>
+                  {/* Platform selector - custom dropdown with portal to avoid scroll clipping */}
+                  <PlatformSelect
+                    value={previewPlatform}
+                    onChange={(v) => setPreviewPlatform(v)}
+                    options={[
+                      { value: "LinkedIn", label: "LinkedIn" },
+                      { value: "Instagram", label: "Instagram" },
+                    ]}
+                    label="Platform"
+                  />
                   {/* Preview card */}
                   <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-4 overflow-x-auto">
                     {previewPlatform === "LinkedIn" ? (
@@ -544,6 +637,7 @@ export function PostEditorPanel({
                   </button>
                   <div className="relative flex-1 min-w-0">
                     <button
+                      ref={remixButtonRef}
                       onClick={() => setRemixOpen((v) => !v)}
                       disabled={remixing || REMIX_OPTIONS.length === 0}
                       className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm hover:bg-amber-500/20 disabled:opacity-50 transition-colors"
@@ -556,26 +650,37 @@ export function PostEditorPanel({
                       Remix
                       <ChevronDown className="h-3.5 w-3.5 opacity-70" />
                     </button>
-                    {remixOpen && (
-                      <>
-                        <div
-                          className="fixed inset-0 z-40"
-                          onClick={() => setRemixOpen(false)}
-                          aria-hidden
-                        />
-                        <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border border-white/10 bg-zinc-900/95 backdrop-blur-xl py-1 shadow-xl">
-                          {REMIX_OPTIONS.map((opt) => (
-                            <button
-                              key={opt.value}
-                              onClick={() => handleRemix(opt.value)}
-                              className="w-full px-3 py-2 text-left text-sm text-white/90 hover:bg-white/10 transition-colors"
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
+                    {remixOpen &&
+                      typeof document !== "undefined" &&
+                      remixDropdownStyle &&
+                      createPortal(
+                        <>
+                          <div
+                            className="fixed inset-0 z-[100]"
+                            onClick={() => setRemixOpen(false)}
+                            aria-hidden
+                          />
+                          <div
+                            className="fixed z-[101] rounded-lg border border-white/10 bg-zinc-900/95 backdrop-blur-xl py-1 shadow-xl max-h-[50vh] overflow-y-auto"
+                            style={{
+                              top: remixDropdownStyle.top,
+                              left: remixDropdownStyle.left,
+                              width: remixDropdownStyle.width,
+                            }}
+                          >
+                            {REMIX_OPTIONS.map((opt) => (
+                              <button
+                                key={opt.value}
+                                onClick={() => handleRemix(opt.value)}
+                                className="w-full px-3 py-2 text-left text-sm text-white/90 hover:bg-white/10 transition-colors"
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </>,
+                        document.body
+                      )}
                   </div>
                   <button
                     onClick={handleDelete}

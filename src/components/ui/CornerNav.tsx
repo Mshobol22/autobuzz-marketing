@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { Settings } from "lucide-react";
 import { Magnetic } from "@/components/ui/Magnetic";
+import { useNav } from "@/components/providers/NavContext";
 
 const NAV_LINKS: Array<{ href: string; label: string; icon?: React.ComponentType<{ className?: string }> }> = [
   { href: "/", label: "DASHBOARD" },
@@ -17,7 +18,9 @@ const NAV_LINKS: Array<{ href: string; label: string; icon?: React.ComponentType
 ];
 
 export function CornerNav() {
-  const [menuOpen, setMenuOpen] = useState(false);
+  const nav = useNav();
+  const menuOpen = nav?.menuOpen ?? false;
+  const setMenuOpen = nav?.setMenuOpen ?? (() => {});
   const [time, setTime] = useState("");
 
   useEffect(() => {
@@ -48,8 +51,8 @@ export function CornerNav() {
         <span>CHICAGO, IL</span>
       </div>
 
-      {/* Bottom Left */}
-      <div className="fixed bottom-6 left-6 z-40 font-mono text-[10px] tracking-widest text-white/60 flex items-center gap-2">
+      {/* Bottom Left - hidden on mobile (bottom tab bar shown instead) */}
+      <div className="fixed bottom-6 left-6 z-40 font-mono text-[10px] tracking-widest text-white/60 flex items-center gap-2 hidden md:flex">
         <span className="relative flex h-2 w-2">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
@@ -57,8 +60,8 @@ export function CornerNav() {
         SYSTEM STATUS: ONLINE
       </div>
 
-      {/* Bottom Right - Menu trigger (Magnetic) */}
-      <Magnetic className="fixed bottom-6 right-6 z-40">
+      {/* Bottom Right - Menu trigger; hidden on mobile (More in bottom bar) */}
+      <Magnetic className="fixed bottom-6 right-6 z-40 hidden md:block">
         <button
           onClick={() => setMenuOpen(true)}
           className="w-12 h-12 flex items-center justify-center font-mono text-2xl text-amber-500/90 hover:text-amber-500 transition-colors border border-amber-500/30 hover:border-amber-500/50"

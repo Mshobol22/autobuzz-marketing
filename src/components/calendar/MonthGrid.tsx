@@ -53,7 +53,9 @@ export function MonthGrid({ year, month, posts, onPostClick }: MonthGridProps) {
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm overflow-hidden">
-      <div className="grid grid-cols-7 gap-px bg-white/10">
+      {/* Horizontal scroll on mobile; full grid on larger screens */}
+      <div className="overflow-x-auto -mx-1 px-1 md:overflow-visible md:mx-0 md:px-0">
+        <div className="grid grid-cols-7 gap-px bg-white/10 min-w-[320px] md:min-w-0">
         {WEEKDAY_LABELS.map((label) => (
           <div
             key={label}
@@ -76,6 +78,7 @@ export function MonthGrid({ year, month, posts, onPostClick }: MonthGridProps) {
             />
           );
         })}
+        </div>
       </div>
     </div>
   );
