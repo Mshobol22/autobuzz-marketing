@@ -1,5 +1,7 @@
 "use server";
 
+import { auth } from "@clerk/nextjs/server";
+import { getAyrshareProfileKeyForUser } from "@/app/actions/getAyrshareToken";
 import type { PostNowResult } from "@/lib/types";
 
 const AYRSHARE_API_URL = "https://api.ayrshare.com/api/post";
@@ -21,12 +23,24 @@ export async function postNow({
   image?: string | null;
   platforms: string[];
 }): Promise<PostNowResult> {
-  const apiKey = process.env.AYRSHARE_API_KEY;
+  const { userId } = await auth();
+  if (!userId) {
+    return { success: false, error: "Not authenticated" };
+  }
 
+  const apiKey = process.env.AYRSHARE_API_KEY;
   if (!apiKey) {
     return {
       success: false,
       error: "Ayrshare API key is not configured. Add AYRSHARE_API_KEY to .env.local.",
+    };
+  }
+
+  const profileKey = await getAyrshareProfileKeyForUser(userId);
+  if (!profileKey) {
+    return {
+      success: false,
+      error: "Connect your social accounts first. Go to Settings → Integrations.",
     };
   }
 
@@ -44,12 +58,15 @@ export async function postNow({
   }
 
   try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "Profile-Key": profileKey,
+    };
+
     const res = await fetch(AYRSHARE_API_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

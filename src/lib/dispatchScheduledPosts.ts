@@ -4,6 +4,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { getAyrshareProfileKeyForUser } from "@/app/actions/getAyrshareToken";
 
 const AYRSHARE_API_URL = "https://api.ayrshare.com/api/post";
 
@@ -25,6 +26,7 @@ function getSupabase() {
 async function publishToAyrshare(
   content: string,
   platform: string,
+  profileKey: string,
   imageUrl?: string | null
 ): Promise<{ success: boolean; error?: string }> {
   const apiKey = process.env.AYRSHARE_API_KEY;
@@ -48,6 +50,7 @@ async function publishToAyrshare(
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
+        "Profile-Key": profileKey,
       },
       body: JSON.stringify(body),
     });
@@ -95,7 +98,7 @@ export async function dispatchScheduledPosts(): Promise<DispatchResult> {
 
   const { data: posts, error: fetchError } = await supabase
     .from("posts")
-    .select("id, content, platform, image_url")
+    .select("id, content, platform, image_url, user_id")
     .eq("status", "scheduled")
     .lte("scheduled_for", now);
 
@@ -123,9 +126,30 @@ export async function dispatchScheduledPosts(): Promise<DispatchResult> {
       continue;
     }
 
+    const profileKey = post.user_id
+      ? await getAyrshareProfileKeyForUser(post.user_id)
+      : null;
+    if (!profileKey) {
+      await supabase
+        .from("posts")
+        .update({
+          status: "failed",
+          error_message: "User has not connected social accounts",
+          updated_at: now,
+        })
+        .eq("id", post.id);
+      result.errors.push({
+        postId: post.id,
+        error: "User has not connected social accounts",
+      });
+      result.posts_processed++;
+      continue;
+    }
+
     const publishResult = await publishToAyrshare(
       post.content,
       post.platform,
+      profileKey,
       post.image_url
     );
 

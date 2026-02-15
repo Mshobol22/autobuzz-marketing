@@ -18,6 +18,7 @@ async function publishToAyrshare(
   content: string,
   platform: string,
   apiKey: string,
+  profileKey: string,
   imageUrl?: string | null
 ): Promise<{ success: boolean; error?: string }> {
   const ayrsharePlatform = PLATFORM_MAP[platform] ?? platform.toLowerCase();
@@ -36,6 +37,7 @@ async function publishToAyrshare(
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
+        "Profile-Key": profileKey,
       },
       body: JSON.stringify(body),
     });
@@ -92,7 +94,7 @@ Deno.serve(async (req) => {
 
     const { data: posts, error: fetchError } = await supabase
       .from("posts")
-      .select("id, content, platform, image_url")
+      .select("id, content, platform, image_url, user_id")
       .eq("status", "scheduled")
       .lte("scheduled_for", now);
 
@@ -129,10 +131,37 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      let profileKey: string | null = null;
+      if (post.user_id) {
+        const { data: profile } = await supabase
+          .from("user_ayrshare_profiles")
+          .select("ayrshare_profile_key")
+          .eq("user_id", post.user_id)
+          .maybeSingle();
+        profileKey = profile?.ayrshare_profile_key ?? null;
+      }
+      if (!profileKey) {
+        await supabase
+          .from("posts")
+          .update({
+            status: "failed",
+            error_message: "User has not connected social accounts",
+            updated_at: now,
+          })
+          .eq("id", post.id);
+        results.push({
+          id: post.id,
+          success: false,
+          error: "User has not connected social accounts",
+        });
+        continue;
+      }
+
       const publishResult = await publishToAyrshare(
         post.content,
         post.platform,
         ayrshareApiKey,
+        profileKey,
         post.image_url
       );
 

@@ -3,14 +3,16 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { Settings } from "lucide-react";
 import { Magnetic } from "@/components/ui/Magnetic";
 
-const NAV_LINKS = [
+const NAV_LINKS: Array<{ href: string; label: string; icon?: React.ComponentType<{ className?: string }> }> = [
   { href: "/", label: "DASHBOARD" },
   { href: "/generator", label: "GENERATOR" },
   { href: "/vault", label: "VAULT" },
   { href: "/schedule", label: "SCHEDULE" },
   { href: "/analytics", label: "ANALYTICS" },
+  { href: "/settings/integrations", label: "SETTINGS", icon: Settings },
 ];
 
 export function CornerNav() {
@@ -94,8 +96,9 @@ export function CornerNav() {
                   key={link.href}
                   href={link.href}
                   onClick={() => setMenuOpen(false)}
-                  className="font-serif text-4xl md:text-6xl tracking-[0.3em] text-amber-500/90 hover:text-amber-500 transition-colors"
+                  className="font-serif text-4xl md:text-6xl tracking-[0.3em] text-amber-500/90 hover:text-amber-500 transition-colors flex items-center justify-center gap-3"
                 >
+                  {link.icon && <link.icon className="h-8 w-8 md:h-10 md:w-10" />}
                   {link.label}
                 </Link>
               ))}
