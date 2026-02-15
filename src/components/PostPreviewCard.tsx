@@ -13,7 +13,8 @@ import {
   Save,
   Send,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { generatePost } from "@/app/actions/generatePost";
 import { generateImage } from "@/app/actions/generateImage";
@@ -147,7 +148,12 @@ export function PostPreviewCard({ initialImage }: PostPreviewCardProps = {}) {
   const [schedulePopoverOpen, setSchedulePopoverOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const scheduleButtonRef = useRef<HTMLButtonElement>(null);
-  const schedulePopoverRef = useRef<HTMLDivElement>(null);
+  const [scheduleDropdownStyle, setScheduleDropdownStyle] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    openAbove: boolean;
+  } | null>(null);
   const [postId, setPostId] = useState<string | null>(null);
   const [suggestedImagePrompt, setSuggestedImagePrompt] = useState<string | null>(null);
 
@@ -155,16 +161,30 @@ export function PostPreviewCard({ initialImage }: PostPreviewCardProps = {}) {
     if (initialImage) setDraftImage(initialImage);
   }, [initialImage]);
 
+  useLayoutEffect(() => {
+    if (!schedulePopoverOpen || !scheduleButtonRef.current || typeof document === "undefined") {
+      setScheduleDropdownStyle(null);
+      return;
+    }
+    const rect = scheduleButtonRef.current.getBoundingClientRect();
+    const DROPDOWN_EST_HEIGHT = 160;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openAbove = spaceBelow < DROPDOWN_EST_HEIGHT;
+    setScheduleDropdownStyle({
+      top: openAbove ? rect.top - DROPDOWN_EST_HEIGHT - 4 : rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 280),
+      openAbove,
+    });
+  }, [schedulePopoverOpen]);
+
   useEffect(() => {
     if (!schedulePopoverOpen) return;
     function handleClickOutside(e: MouseEvent) {
-      const target = e.target as Node;
-      if (
-        schedulePopoverRef.current &&
-        !schedulePopoverRef.current.contains(target)
-      ) {
-        setSchedulePopoverOpen(false);
-      }
+      const target = e.target as HTMLElement;
+      if (target?.closest?.("[data-schedule-dropdown]")) return;
+      if (target?.closest?.("[data-schedule-trigger]")) return;
+      setSchedulePopoverOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -594,7 +614,7 @@ export function PostPreviewCard({ initialImage }: PostPreviewCardProps = {}) {
                   <Save className="h-4 w-4" />
                 )}
               </motion.button>
-              <div className="relative" ref={schedulePopoverRef}>
+              <div className="relative" data-schedule-trigger>
                 <motion.button
                   ref={scheduleButtonRef}
                   whileHover={{ scale: 1.02 }}
@@ -610,37 +630,56 @@ export function PostPreviewCard({ initialImage }: PostPreviewCardProps = {}) {
                   )}
                   Schedule
                 </motion.button>
-                {schedulePopoverOpen && (
-                  <div className="absolute left-0 top-full mt-2 z-50 min-w-[280px] rounded-xl bg-zinc-900 border border-white/10 shadow-xl p-4">
-                    <label className="block text-sm font-medium text-zinc-400 mb-2">
-                      Date & Time
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={scheduleDate}
-                      onChange={(e) => setScheduleDate(e.target.value)}
-                      min={new Date().toISOString().slice(0, 16)}
-                      className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white focus:outline-none focus:border-accent-violet/50"
-                    />
-                    <div className="flex gap-2 mt-3">
-                      <button
+                {schedulePopoverOpen &&
+                  typeof document !== "undefined" &&
+                  scheduleDropdownStyle &&
+                  createPortal(
+                    <>
+                      <div
+                        className="fixed inset-0 z-[100]"
                         onClick={() => setSchedulePopoverOpen(false)}
-                        className="flex-1 rounded-lg px-3 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
+                        aria-hidden
+                      />
+                      <div
+                        data-schedule-dropdown
+                        className="fixed z-[101] min-w-[280px] rounded-xl bg-zinc-900 border border-white/10 shadow-xl p-4"
+                        style={{
+                          top: scheduleDropdownStyle.top,
+                          left: scheduleDropdownStyle.left,
+                          width: scheduleDropdownStyle.width,
+                        }}
                       >
-                        Cancel
-                      </button>
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={handleSchedule}
-                        disabled={scheduling || !scheduleDate}
-                        className="flex-1 rounded-lg bg-accent-violet/30 border border-accent-violet/40 px-3 py-2 text-sm text-accent-pink font-medium disabled:opacity-50"
-                      >
-                        {scheduling ? "Scheduling…" : "Schedule"}
-                      </motion.button>
-                    </div>
-                  </div>
-                )}
+                        <label className="block text-sm font-medium text-zinc-400 mb-2">
+                          Date & Time
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={scheduleDate}
+                          onChange={(e) => setScheduleDate(e.target.value)}
+                          min={new Date().toISOString().slice(0, 16)}
+                          className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white focus:outline-none focus:border-accent-violet/50"
+                        />
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            onClick={() => setSchedulePopoverOpen(false)}
+                            className="flex-1 rounded-lg px-3 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={handleSchedule}
+                            disabled={scheduling || !scheduleDate}
+                            className="flex-1 rounded-lg bg-accent-violet/30 border border-accent-violet/40 px-3 py-2 text-sm text-accent-pink font-medium disabled:opacity-50"
+                          >
+                            {scheduling ? "Scheduling…" : "Schedule"}
+                          </motion.button>
+                        </div>
+                      </div>
+                    </>,
+                    document.body
+                  )}
               </div>
               <motion.button
                 whileHover={{ scale: 1.02 }}

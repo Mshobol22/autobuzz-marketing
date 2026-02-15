@@ -1,8 +1,8 @@
 /**
- * Upload an image from a temporary URL (e.g. fal.ai, Pollinations) to Supabase Storage.
+ * Upload an image from a temporary URL (e.g. fal.ai, Pollinations, Replicate) to Supabase Storage.
  * Returns a permanent public URL that won't expire.
+ * Use `headers` for URLs that require auth (e.g. Replicate: { Authorization: "Bearer TOKEN" }).
  */
-
 import { createClient } from "@supabase/supabase-js";
 
 const BUCKET = "post-images";
@@ -14,13 +14,16 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-export async function uploadImage(imageUrl: string): Promise<string | null> {
+export async function uploadImage(
+  imageUrl: string,
+  options?: { headers?: Record<string, string> }
+): Promise<string | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
 
   try {
     const res = await fetch(imageUrl, {
-      headers: { Accept: "image/*" },
+      headers: { Accept: "image/*", ...options?.headers },
     });
 
     if (!res.ok) {

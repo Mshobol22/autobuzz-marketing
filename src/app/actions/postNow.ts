@@ -47,8 +47,9 @@ export async function postNow({
     platforms: ayrsharePlatforms,
   };
 
-  if (image?.trim() && image.startsWith("https://")) {
-    body.mediaUrls = [image.trim()];
+  const imageUrl = image?.trim();
+  if (imageUrl && imageUrl.startsWith("https://")) {
+    body.mediaUrls = [imageUrl];
   }
 
   try {
@@ -86,9 +87,14 @@ export async function postNow({
     const errorMsg =
       Array.isArray(errors) && errors.length > 0
         ? errors.map((e: { message?: string }) => e.message ?? e).join(", ")
-        : "Post failed";
+        : data?.message ?? data?.error ?? "Post failed";
 
-    return { success: false, error: errorMsg };
+    const hint =
+      errorMsg.toLowerCase().includes("link") || errorMsg.toLowerCase().includes("connect")
+        ? " Connect your social accounts at app.ayrshare.com (Single Player) or Settings → Integrations (Business Plan)."
+        : "";
+
+    return { success: false, error: errorMsg + hint };
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to publish post";

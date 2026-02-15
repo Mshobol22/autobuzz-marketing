@@ -17,7 +17,7 @@ function GeneratorContent() {
   }, []);
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="p-6 lg:p-8 pb-32">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <motion.h1
