@@ -1,4 +1,8 @@
+import { NextResponse } from "next/server";
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+
+// Cron endpoint uses its own Bearer token (CRON_SECRET), not Clerk session
+const isCronRoute = createRouteMatcher(["/api/cron/(.*)"]);
 
 // Define routes that should be protected (e.g. dashboard, api, generator)
 const isProtectedRoute = createRouteMatcher([
@@ -13,6 +17,7 @@ const isProtectedRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
+  if (isCronRoute(req)) return NextResponse.next(); // Let cron through; route validates CRON_SECRET
   if (isProtectedRoute(req)) await auth.protect();
 });
 
